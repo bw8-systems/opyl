@@ -1,0 +1,9 @@
+name: Pytest Unit Tests
+on: [push]
+jobs:
+    Lex-Tests:
+        runs-on: ubuntu-latest
+        steps:
+            - run: pip install poetry
+            - run: poetry install
+            - run: poetry run pytest .
