@@ -4,7 +4,7 @@ Tools for parsing the Opal grammar.
 from dataclasses import dataclass
 import enum
 from collections.abc import Sequence
-from typing import overload, Callable, NamedTuple
+from typing import overload, Callable, NamedTuple, Self
 from functools import partial
 
 import new_types as lex
@@ -27,6 +27,30 @@ class IllegalSyntax(ParseException):
 
 type ParseResult[Okay] = Okay | ParseError
 type Parser[T] = Callable[[], ParseResult[T]]
+
+
+class Result[Okay, Error]:
+    def __init__(self):
+        self.ok: Okay | None = None
+        self.err: Error | None = None
+
+    @classmethod
+    def Ok(cls, ok: Okay) -> Self:
+        self = cls()
+        cls.ok = ok
+        return self
+
+    @classmethod
+    def Err(cls, err: Error) -> Self:
+        self = cls()
+        cls.err = err
+        return self
+
+    def and_then[U](self, op: Callable[[], "Result[U, Error]"]) -> "Result[U, Error]":
+        if self.ok is not None:
+            return op()
+        new: Result[U, Error] = Result.Err(self.err)
+        return new
 
 
 class ParsedBetween[Before, After, Between](NamedTuple):

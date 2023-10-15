@@ -1,12 +1,8 @@
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import enum
-import typing
 
-from opyl.compile import lex
-
-
-T = typing.TypeVar("T")
+from compile import lex
 
 
 @dataclass
@@ -18,15 +14,15 @@ class Node(ABC):
     span: lex.Span
 
     @abstractmethod
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         raise NotImplementedError
 
 
 @dataclass
 class Keyword(Node):
-    kind: lex.KeywordKind
+    kind: lex.KeywordTokenKind
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_keyword(self)
 
 
@@ -34,7 +30,7 @@ class Keyword(Node):
 class Integer(Node):
     value: int
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_integer(self)
 
 
@@ -42,7 +38,7 @@ class Integer(Node):
 class Identifier(Node):
     name: str
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_identifier(self)
 
 
@@ -50,7 +46,7 @@ class Identifier(Node):
 class Expression(Node):
     expr: Identifier | Integer
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_expression(self)
 
 
@@ -73,7 +69,7 @@ class Type(Node):
 class PrimitiveType(Type):
     type: PrimitiveKind
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_primitive_type(self)
 
 
@@ -81,7 +77,7 @@ class PrimitiveType(Type):
 class IdentifierType(Type):
     type: Identifier
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_identifier_type(self)
 
 
@@ -90,7 +86,7 @@ class ArrayType(Type):
     type: Type
     length: Expression
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_array_type(self)
 
 
@@ -99,7 +95,7 @@ class Field(Node):
     kind: Type
     ident: Identifier
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_field(self)
 
 
@@ -113,7 +109,7 @@ class Const(Definition):
     kind: Type
     expr: Expression
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_const(self)
 
 
@@ -121,7 +117,7 @@ class Const(Definition):
 class Struct(Definition):
     fields: list[Field]
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_struct(self)
 
 
@@ -129,7 +125,7 @@ class Struct(Definition):
 class Enum(Definition):
     variants: list[Identifier]
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_enum(self)
 
 
@@ -137,7 +133,7 @@ class Enum(Definition):
 class Typedef(Definition):
     kind: Type
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_typedef(self)
 
 
@@ -146,11 +142,11 @@ class Module(Definition):
     ident: Identifier
     definitions: list["Definition"]
 
-    def accept(self, visitor: "NodeVisitor[T]") -> T:
+    def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_module(self)
 
 
-class NodeVisitor(ABC, typing.Generic[T]):
+class NodeVisitor[T](ABC):
     """
     Abstract Visitor base for parse.Node visitors. Implementors of this class can use
     it in order to visit all Nodes in a given tree. For example, a PrinterVisitor can
