@@ -4,6 +4,9 @@ from compile import lex
 from compile import parse
 
 
+# from support.split_monad import Okay, Error
+
+
 tokens_or_error = lex.tokenize(
     """
     module Foo {

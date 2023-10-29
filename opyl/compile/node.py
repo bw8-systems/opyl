@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import enum
 
-from compile import lex
+from compile import token
 
 
 @dataclass
@@ -11,7 +11,7 @@ class Node(ABC):
     Represents a generic node in a PISS AST.
     """
 
-    span: lex.Span
+    span: token.Span
 
     @abstractmethod
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
@@ -20,14 +20,14 @@ class Node(ABC):
 
 @dataclass
 class Keyword(Node):
-    kind: lex.KeywordTokenKind
+    kind: token.KeywordKind
 
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_keyword(self)
 
 
 @dataclass
-class Integer(Node):
+class IntegerNode(Node):
     value: int
 
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
@@ -35,7 +35,7 @@ class Integer(Node):
 
 
 @dataclass
-class Identifier(Node):
+class IdentifierNode(Node):
     name: str
 
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
@@ -44,7 +44,7 @@ class Identifier(Node):
 
 @dataclass
 class Expression(Node):
-    expr: Identifier | Integer
+    expr: IdentifierNode | IntegerNode
 
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_expression(self)
@@ -75,7 +75,7 @@ class PrimitiveType(Type):
 
 @dataclass
 class IdentifierType(Type):
-    type: Identifier
+    type: IdentifierNode
 
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_identifier_type(self)
@@ -93,7 +93,7 @@ class ArrayType(Type):
 @dataclass
 class Field(Node):
     kind: Type
-    ident: Identifier
+    ident: IdentifierNode
 
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_field(self)
@@ -101,7 +101,7 @@ class Field(Node):
 
 @dataclass
 class Definition(Node):
-    ident: Identifier
+    ident: IdentifierNode
 
 
 @dataclass
@@ -123,7 +123,7 @@ class Struct(Definition):
 
 @dataclass
 class Enum(Definition):
-    variants: list[Identifier]
+    variants: list[IdentifierNode]
 
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
         return visitor.visit_enum(self)
@@ -139,7 +139,7 @@ class Typedef(Definition):
 
 @dataclass
 class Module(Definition):
-    ident: Identifier
+    ident: IdentifierNode
     definitions: list["Definition"]
 
     def accept[T](self, visitor: "NodeVisitor[T]") -> T:
@@ -163,11 +163,11 @@ class NodeVisitor[T](ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def visit_integer(self, integer: Integer) -> T:
+    def visit_integer(self, integer: IntegerNode) -> T:
         raise NotImplementedError
 
     @abstractmethod
-    def visit_identifier(self, ident: Identifier) -> T:
+    def visit_identifier(self, ident: IdentifierNode) -> T:
         raise NotImplementedError
 
     @abstractmethod

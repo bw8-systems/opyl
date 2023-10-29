@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import enum
+from typing import Literal as Lit
 
 
 @dataclass
@@ -20,6 +21,8 @@ class Span:
 
 
 class PrimitiveKind(enum.Enum):
+    Colon = ":"
+
     LeftBrace = "{"
     RightBrace = "}"
     LeftBracket = "["
@@ -29,10 +32,13 @@ class PrimitiveKind(enum.Enum):
     Equals = "="
     Plus = "+"
 
+
 class KeywordKind(enum.Enum):
     """
     KeywordKind enumerates the keywords which are legal in Opal.
     """
+
+    Let = "let"
 
     Const = "const"
     Struct = "struct"
@@ -41,6 +47,7 @@ class KeywordKind(enum.Enum):
     Module = "module"
     Uint = "uint"
     Int = "int"
+
 
 IntegerKind = int
 IdentifierKind = str
@@ -53,18 +60,23 @@ class BaseToken[Kind: TokenKind]:
     span: Span
     kind: Kind  # TODO: Is this needed?
 
+
 class PrimitiveToken(BaseToken[PrimitiveKind]):
     ...
 
+
 class KeywordToken(BaseToken[KeywordKind]):
     ...
+
 
 @dataclass
 class IntegerToken(BaseToken[IntegerKind]):
     value: int
 
+
 @dataclass
 class IdentifierToken(BaseToken[IdentifierKind]):
     value: str
+
 
 type Token = PrimitiveToken | KeywordToken | IntegerToken | IdentifierToken

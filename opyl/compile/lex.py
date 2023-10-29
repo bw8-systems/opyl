@@ -2,21 +2,30 @@
 Tools for tokenizing the Opal lexicon.
 """
 
-import enum
 from typing import Callable
 
 from compile import token
 
-var: token.Token
-ls: list[token.Token] = []
-
-class LexError(enum.Enum):
-    UnexpectedEOF = enum.auto()
-    UnexpectedCharacter = enum.auto()
-    NoMatch = enum.auto()
+from support.split_monad import Okay, Error, Result, Option, Some, Nil
 
 
-type LexResult[T] = T | LexError
+class LexError(Exception):
+    ...
+
+
+class UnexpectedEOF(LexError):
+    ...
+
+
+class UnexpectedCharacter(LexError):
+    ...
+
+
+class NoMatch(LexError):
+    ...
+
+
+type LexResult[T] = Result[T, LexError]
 
 
 def take_while(data: str, pred: Callable[[str], bool]) -> LexResult[tuple[str, int]]:
@@ -44,9 +53,9 @@ def take_while(data: str, pred: Callable[[str], bool]) -> LexResult[tuple[str, i
         current_index += 1
 
     if current_index == 0:
-        return LexError.NoMatch
+        return Error(NoMatch())
 
-    return data[0:current_index], current_index
+    return Okay((data[0:current_index], current_index))
 
 
 def skip_until(data: str, pattern: str) -> str:
@@ -85,15 +94,15 @@ def tokenize_identifier_or_keyword(
     try:
         first_character = data[0]
     except IndexError:
-        return LexError.UnexpectedEOF
+        return Error(UnexpectedEOF())
 
     if first_character.isdigit():
-        return LexError.UnexpectedCharacter
+        return Error(UnexpectedCharacter())
 
     match take_while(data, lambda char: char == "_" or char.isalnum()):
-        case (name, chars_read):
+        case Okay((name, chars_read)):
             ...
-        case LexError() as error:
+        case error:
             return error
 
     # TODO: Use pattern matching here instead
@@ -103,7 +112,7 @@ def tokenize_identifier_or_keyword(
     except ValueError:
         token_kind = name
 
-    return token_kind, chars_read
+    return Okay((token_kind, chars_read))
 
 
 def tokenize_integer(data: str) -> LexResult[tuple[int, int]]:
@@ -118,9 +127,9 @@ def tokenize_integer(data: str) -> LexResult[tuple[int, int]]:
     """
 
     match take_while(data, str.isdigit):
-        case (integer, chars_read):
-            return int(integer), chars_read
-        case LexError() as error:
+        case Okay((integer, chars_read)):
+            return Okay((int(integer), chars_read))
+        case error:
             return error
 
 
@@ -136,11 +145,11 @@ def skip_whitespace(data: str) -> LexResult[int]:
     """
 
     match take_while(data, str.isspace):
-        case (_, chars_read):
-            return chars_read
-        case LexError.NoMatch:
-            return 0
-        case LexError() as error:
+        case Okay((_, chars_read)):
+            return Okay(chars_read)
+        case Error(NoMatch()):
+            return Okay(0)
+        case error:
             return error
 
 
@@ -177,20 +186,18 @@ def skip(data: str) -> LexResult[int]:
 
     while True:
         match skip_whitespace(remaining):
-            case LexError() as error:
+            case Okay(whitespace_count):
+                remaining = remaining[whitespace_count:]
+                comment_count = skip_comments(remaining)
+                remaining = remaining[comment_count:]
+
+                if whitespace_count + comment_count == 0:
+                    return Okay(len(data) - len(remaining))
+            case error:
                 return error
-            case whitespace_count:
-                ...
-
-        remaining = remaining[whitespace_count:]
-        comment_count = skip_comments(remaining)
-        remaining = remaining[comment_count:]
-
-        if whitespace_count + comment_count == 0:
-            return len(data) - len(remaining)
 
 
-def _token(data: str) -> LexResult[tuple[token.TokenKind | int | str, int] | None]:
+def _token(data: str) -> LexResult[Option[tuple[token.TokenKind | int | str, int]]]:
     """
     Consume token from input, if it exists.
 
@@ -205,10 +212,11 @@ def _token(data: str) -> LexResult[tuple[token.TokenKind | int | str, int] | Non
     try:
         next_char = data[0]
     except IndexError:
-        return None
+        return Error(UnexpectedEOF())
 
     if next_char in [member.value for member in token.PrimitiveKind]:
-        return token.PrimitiveKind(next_char), 1
+        return Okay(Some((token.TokenKind.Primitive, 1)))
+        # return Okay((token.PrimitiveKind(next_char), 1))
 
     elif next_char.isdigit():
         return tokenize_integer(data)
@@ -217,7 +225,7 @@ def _token(data: str) -> LexResult[tuple[token.TokenKind | int | str, int] | Non
         return tokenize_identifier_or_keyword(data)
 
     else:
-        return LexError.UnexpectedCharacter
+        return Error(UnexpectedCharacter())
 
 
 class Tokenizer:
@@ -241,7 +249,7 @@ class Tokenizer:
             return f'Tokenizer("{self.remaining_text}")'
         return f'Tokenizer("{self.remaining_text[0:15]}...")'
 
-    def next_token(self) -> LexResult[token.Token | None]:
+    def next_token(self) -> Option[token.Token]:
         """
         Consume one token from front of input, if it exists.
 
@@ -253,13 +261,18 @@ class Tokenizer:
         self.skip_whitespace()
 
         if not len(self.remaining_text):
-            return None
+            return Nil()
 
         start = self.current_index
 
         result = self._next_token()
-        if result is None or isinstance(result, LexError):
-            return result
+        match result:
+            case Okay(Nil()):
+                return Nil()
+            case Error(err):
+                return Nil()  # TODO: Correct?
+            case Okay(Some(kind)):
+                ...
 
         if isinstance(result, token.IntegerKind):
             return token.IntegerToken(
@@ -274,7 +287,9 @@ class Tokenizer:
                 kind=result, span=token.Span(start, self.current_index)
             )
 
-        return token.KeywordToken(kind=result, span=token.Span(start, self.current_index))
+        return token.KeywordToken(
+            kind=result, span=token.Span(start, self.current_index)
+        )
 
     def skip_whitespace(self) -> LexResult[None]:
         """
@@ -282,12 +297,13 @@ class Tokenizer:
         """
 
         match skip(self.remaining_text):
-            case LexError() as error:
-                return error
-            case skipped:
+            case Error(err):
+                return Error(err)
+            case Okay(skipped):
                 self.chomp(skipped)
+                return Okay(None)
 
-    def _next_token(self) -> LexResult[token.TokenKind | None]:
+    def _next_token(self) -> LexResult[Option[token.TokenKind]]:
         """
         Consume token from remaining input, if it exists.
 
@@ -297,11 +313,21 @@ class Tokenizer:
         """
 
         match _token(self.remaining_text):
-            case None | LexError() as off_nominal:
-                return off_nominal
-            case token_kind, chars_read:
+            case Okay(Nil()):
+                return Okay(Nil())
+            case Error(err):
+                return Error(err)
+            case Okay(Some((token_kind, chars_read))):
                 self.chomp(chars_read)
-                return token_kind
+                match token_kind:
+                    case int():
+                        return Okay(Some(token.TokenKind.Integer))
+                    case str():
+                        return Okay(Some(token.TokenKind.Identifier))
+                    case _:
+                        return Okay(Some(token_kind))
+            case _:
+                return Error(LexError())  # TODO: Probably should be handled...
 
     def chomp(self, count: int) -> None:
         """
@@ -330,11 +356,10 @@ def tokenize(data: str) -> LexResult[list[token.Token]]:
     tokens = list[token.Token]()
 
     while True:
-        result = tokenizer.next_token()
-        if result is None:
-            break
-        if isinstance(result, LexError):
-            return result
-        tokens.append(result)
+        match tokenizer.next_token():
+            case Nil():
+                break
+            case Some(tok):
+                tokens.append(tok)
 
-    return tokens
+    return Okay(tokens)

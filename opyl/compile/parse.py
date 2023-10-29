@@ -2,37 +2,28 @@
 Tools for parsing the Opal grammar.
 """
 from dataclasses import dataclass
-import enum
-from collections.abc import Sequence
-from typing import overload, Callable, NamedTuple
+from typing import Callable, Sequence, Any
 from functools import partial
 
-import new_types as lex
-import new_types as node
-from new_types import kind, token
+from compile import token, node
+
+from support.split_monad import Result, Okay, Error, Option, Nil, Some
 
 
-class ParseError(enum.Enum):
-    UnexpectedEOF = enum.auto()
-    UnexpectedToken = enum.auto()
-
-
-class ParseException(Exception):
+class ParseException(ValueError):
     ...
 
 
-class IllegalSyntax(ParseException):
+class UnexpectedEOF(ParseException):
     ...
 
 
-type ParseResult[Okay] = Okay | ParseError
+class UnexpectedToken(ParseException):
+    ...
+
+
+type ParseResult[T] = Result[T, ParseException]
 type Parser[T] = Callable[[], ParseResult[T]]
-
-
-class ParsedBetween[Before, After, Between](NamedTuple):
-    before: Before
-    after: After
-    between: Between
 
 
 @dataclass
@@ -56,24 +47,9 @@ class Stack:
         self.index = self.drop()
 
 
-# TODO: Probably remove.
-def require[T](result: ParseResult[T]) -> T:
-    if isinstance(result, ParseError):
-        raise IllegalSyntax()
-    return result
-
-
-def attempt[T](stack: Stack, parser: Parser[T]) -> T | None:
+def attempt[T](stack: Stack, parser: Parser[T]) -> ParseResult[T]:
     stack.push()
-
-    result = parser()
-    if isinstance(result, ParseError):
-        stack.pop()
-        return None
-    item = result
-
-    stack.drop()
-    return item
+    return parser().exit(stack.drop, stack.pop)
 
 
 def between[
@@ -82,51 +58,49 @@ def between[
     parse_before: Parser[Before],
     parse_between: Parser[Between],
     parse_after: Parser[After],
-) -> ParseResult[ParsedBetween[Before, After, Between]]:
-    before_result = parse_before()
-    if isinstance(before_result, ParseError):
-        return before_result
-    before = before_result
+) -> ParseResult[Between]:
+    between = parse_before().and_then(lambda _: parse_between())
+    if between.is_err():
+        return between
 
-    between_result = parse_between()
-    if isinstance(between_result, ParseError):
-        return between_result
-    between = between_result
+    after = parse_after()
+    if after.is_err():
+        return Error(after.unwrap_err())
 
-    after_result = parse_after()
-    if isinstance(after_result, ParseError):
-        return after_result
-    after = after_result
-
-    return ParsedBetween(before, after, between)
+    return between
 
 
-# def choice[T](self, parsers: Sequence[Parser[T]]) -> ParseResult[T]:
-#     for parser in parsers:
-#         item_or_none = self.attempt(parser)
+def choice[T](stack: Stack, parsers: Sequence[Parser[T]]) -> ParseResult[T]:
+    for parser in parsers:
+        option = attempt(stack, parser)
 
-#         if item_or_none is not None:
-#             item = item_or_none
-#             return item
+        if option.is_some():
+            return Okay(option.unwrap())
 
-#     return ParseError.UnexpectedToken
+    return Error(UnexpectedToken())
 
-# def either[T, U](self, this: Parser[T], that: Parser[U]):
-#     choices = (this, that)
-#     return self.choice(choices)
 
-# def many[T](self, parser: Parser[T]) -> list[T]:
-#     items: list[T] = []
+def either[
+    T, U
+](stack: Stack, this: Parser[T], that: Parser[U]) -> ParseResult[T] | ParseResult[U]:
+    match this():
+        case Okay(ok):
+            return Okay(ok)
+        case _:
+            return that()
 
-#     while True:
-#         item_or_none = self.attempt(parser)
-#         if item_or_none is None:
-#             break
 
-#         item = item_or_none
-#         items.append(item)
+def many[T](stack: Stack, parser: Parser[T]) -> list[T]:
+    items: list[T] = []
 
-#     return items
+    while True:
+        match attempt(stack, parser):
+            case Nil():
+                break
+            case Some(item):
+                items.append(item)
+
+    return items
 
 
 class Stream[T]:
@@ -134,158 +108,91 @@ class Stream[T]:
         self.stack = Stack()
         self.stream = stream
 
-    def peek(self) -> T | None:
+    def __getitem__(self, idx: int) -> Option[T]:
         try:
-            current = self.stream[self.stack.index]
+            return Some(self.stream[self.stack.index])
         except IndexError:
-            return None
+            return Nil()
 
-        return current
+    def peek(self) -> Option[T]:
+        return self[self.stack.index]
+
+    def increment(self) -> None:
+        self.stack.index += 1
 
     def next(self) -> ParseResult[T]:
-        item_or_none = self.peek()
-        if item_or_none is None:
-            return ParseError.UnexpectedEOF
-        item = item_or_none
-
-        self.stack.index += 1
-        return item
+        return (
+            self.peek()
+            .and_then(lambda item: self.increment() or Some(item))
+            .ok_or(UnexpectedEOF())
+        )
 
 
-class OpalParser(Stream[token.Token]):
-    @overload
-    def parse_token(
-        self, kind: kind.PrimitiveKind
+class TokenParser(Stream[token.Token]):
+    def primitive(
+        self,
+        kind: token.PrimitiveKind,
     ) -> ParseResult[token.PrimitiveToken]:
+        match self.peek():
+            case Nil():
+                return Error(UnexpectedEOF())
+            case Some(token.PrimitiveToken(k) as tok) if k is kind:
+                self.next()
+                return Okay(tok)
+            case _:
+                return Error(UnexpectedToken())
+
+    def keyword(self, keyword: token.KeywordKind) -> ParseResult[node.Keyword]:
+        match self.peek():
+            case Nil():
+                return Error(UnexpectedEOF())
+            case Some(token.KeywordToken() as tok):
+                self.next()
+                return Okay(node.Keyword(span=tok.span, kind=keyword))
+            case _:
+                return Error(UnexpectedToken())
+
+    def identifier(self) -> ParseResult[node.IdentifierNode]:
+        match self.peek():
+            case Nil():
+                return Error(UnexpectedEOF())
+            case Some(token.IdentifierToken() as tok):
+                self.next()
+                return Okay(node.IdentifierNode(span=tok.span, name=tok.value))
+            case _:
+                return Error(UnexpectedToken())
+
+    def integer(self) -> ParseResult[node.IntegerNode]:
+        match self.peek():
+            case Nil():
+                return Error(UnexpectedEOF())
+            case Some(token.IntegerToken() as tok):
+                self.next()
+                return Okay(node.IntegerNode(span=tok.span, value=tok.value))
+            case _:
+                return Error(UnexpectedToken())
+
+
+@dataclass
+class OpalParser(TokenParser):
+    def parse_variable_declaration(self) -> ParseResult[Any]:
+        match attempt(
+            self.stack, partial(self.keyword, token.KeywordKind.Let)
+        ).and_then(
+            lambda keyword: self.identifier().and_then(
+                lambda identifier: Okay((keyword, identifier))
+            )
+        ):
+            case Error(err):
+                return Error(err)
+            case Okay((keyword, identifier)):
+                self.primitive(token.PrimitiveKind.Colon).and_then(
+                    lambda _: self.identifier()
+                ).and_then(
+                    lambda type_name: self.primitive(token.PrimitiveKind.Equals).ok()
+                )
+
+        return NotImplemented
+
+    def parse_expression(self) -> ParseResult[Any]:
         ...
-
-    @overload
-    def parse_token(self, kind: kind.KeywordKind) -> ParseResult[token.KeywordToken]:
-        ...
-
-    @overload
-    def parse_token(self, kind: kind.IntegerKind) -> ParseResult[token.IntegerToken]:
-        ...
-
-    @overload
-    def parse_token(
-        self, kind: kind.IdentifierKind
-    ) -> ParseResult[token.IdentifierToken]:
-        ...
-
-    def parse_token(self, kind: kind.TokenKind) -> ParseResult[token.Token]:
-        peeked = self.peek()
-        if peeked is None:
-            return ParseError.UnexpectedEOF
-        if peeked.kind != kind:
-            return ParseError.UnexpectedToken
-
-        return self.next()
-
-    def parse_keyword(self, keyword: kind.KeywordKind) -> ParseResult[node.KeywordNode]:
-        result = self.parse_token(keyword)
-        if isinstance(result, ParseError):
-            return result
-        token = result
-
-        return node.KeywordNode(span=token.span, keyword=keyword)
-
-    def parse_identifier(self) -> ParseResult[node.IdentifierNode]:
-        result = self.parse_token(lex.Identifier)
-        if isinstance(result, ParseError):
-            return result
-        token = result
-
-        return node.IdentifierNode(span=token.span, name=token.value)
-
-    def parse_integer(self) -> ParseResult[node.IntegerNode]:
-        result = self.parse_token(lex.Integer)
-        if isinstance(result, ParseError):
-            return result
-        token = result
-
-        return node.IntegerNode(span=token.span, value=token.value)
-
-    def parse_type(self) -> ParseResult[node.TypeNode]:
-        raise NotImplementedError
-
-    def parse_expression(self) -> ParseResult[node.ExpressionNode]:
-        raise NotImplementedError
-
-    def parse_constant_decl(self) -> ParseResult[node.ConstantNode]:
-        # const name: type = val
-
-        keyword_result = self.parse_keyword(kind.KeywordKind.Const)
-        if isinstance(keyword_result, ParseError):
-            return keyword_result
-        keyword = keyword_result
-
-        ident = require(self.parse_identifier())
-        require(self.parse_token(kind.PrimitiveKind.Colon))
-        type = require(self.parse_type())
-        require(self.parse_token(kind.PrimitiveKind.Equals))
-        expr = require(self.parse_expression())
-
-        return node.ConstantNode(
-            span=keyword.span + expr.span,
-            name=ident.name,
-            type=type,
-            expr=expr,
-        )
-
-    def parse_variable_decl(self) -> ParseResult[node.VariableDeclarationNode]:
-        # TODO: With type inference, this statement has more variation.
-        # let name: type = expr
-
-        # Parser fails if keyword isn't present. That is okay syntactically.
-        keyword_result = self.parse_keyword(kind.KeywordKind.Let)
-        if isinstance(keyword_result, ParseError):
-            return keyword_result
-        keyword = keyword_result
-
-        # ParsING fails if these tokens aren't present. This is a syntax error.
-        # throw an exception to immediately exit context. Exception is implied
-        # by the `require` function.
-        ident = require(self.parse_identifier())
-        require(self.parse_token(kind.PrimitiveKind.Colon))
-        type = require(self.parse_type())
-
-        # Variable declaration is optionally followed by an initializer. Save/restore
-        # state to mitigate case where initializer isn't present. Parsing is okay
-        # regardless of whether the initializer is present or not.
-        equals_or_none = attempt(
-            self.stack, parser=partial(self.parse_token, kind=kind.PrimitiveKind.Equals)
-        )
-
-        # If equals is present, then expression must be present - otherwise its a
-        # syntax error.
-        expr = None
-        if equals_or_none is not None:
-            expr = require(self.parse_expression())
-
-        return node.VariableDeclarationNode(
-            span=keyword.span + type.span,
-            name=ident.name,
-            type=type,
-            expr=expr,
-        )
-
-    def parse_enum_decl(self) -> ParseResult[node.EnumDeclarationNode]:
-        keyword_result = self.parse_keyword(kind.KeywordKind.Enum)
-        if isinstance(keyword_result, ParseError):
-            return keyword_result
-        _keyword = keyword_result
-
-        # ident = require(self.parse_identifier())
-
-        # # between(
-        # #     parse_before=lambda: self.parse_token(kind.PrimitiveKind.LeftBrace),
-        # #     parse_after=lambda: self.parse_token(kind.PrimitiveKind.RightBrace),
-        # #     parse_between=
-        # # )
-
-        # return node.EnumDeclarationNode(
-        #     span=keyword.span,
-        #     name="Foo",
-        #     members=[],
-        # )
