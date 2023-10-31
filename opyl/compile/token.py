@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 import enum
-from typing import Literal as Lit
 
 
 @dataclass

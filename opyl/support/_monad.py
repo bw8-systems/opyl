@@ -92,9 +92,9 @@ class _Option[T](ABC):
             return Some((self.unwrap(), other.unwrap()))
         return Nil
 
-    def zip_with[
-        U, R
-    ](self, other: "Option[U]", func: Callable[[T, U], R]) -> "Option[R]":
+    def zip_with[U, R](
+        self, other: "Option[U]", func: Callable[[T, U], R]
+    ) -> "Option[R]":
         if self.is_some() and other.is_some():
             return Some(func(self.unwrap(), other.unwrap()))
         return Nil

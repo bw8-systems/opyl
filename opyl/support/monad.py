@@ -118,9 +118,9 @@ class Option[Just]:
             return Option[tuple[Just, U]].Some((self.unwrap(), other.unwrap()))
         return Option[tuple[Just, U]].Nil()
 
-    def zip_with[
-        U, R
-    ](self, other: "Option[U]", func: Callable[[Just, U], R]) -> "Option[R]":
+    def zip_with[U, R](
+        self, other: "Option[U]", func: Callable[[Just, U], R]
+    ) -> "Option[R]":
         if self.is_some() and other.is_some():
             return Option[R].Some(func(self.unwrap(), other.unwrap()))
         return Option[R].Nil()
@@ -168,9 +168,9 @@ class Result[Okay, Error: Exception]:
         else:
             return Result[U, Error].Err(self.unwrap_err())
 
-    def and_then[
-        U
-    ](self, op: Callable[[Okay], "Result[U, Error]"]) -> "Result[U, Error]":
+    def and_then[U](
+        self, op: Callable[[Okay], "Result[U, Error]"]
+    ) -> "Result[U, Error]":
         assert self.invariant
         if self._is_ok(self._ok):
             return op(self.unwrap())
@@ -238,9 +238,9 @@ class Result[Okay, Error: Exception]:
             return default
         return op(self.unwrap())
 
-    def map_or_else[
-        U
-    ](self, default: Callable[[Error], U], op: Callable[[Okay], U]) -> U:
+    def map_or_else[U](
+        self, default: Callable[[Error], U], op: Callable[[Okay], U]
+    ) -> U:
         assert self.invariant
         if self.is_ok():
             return op(self.unwrap())
@@ -264,9 +264,9 @@ class Result[Okay, Error: Exception]:
             return res
         return Result[Okay, F].Ok(self.unwrap())
 
-    def or_else[
-        F: Exception
-    ](self, op: Callable[[Error], "Result[Okay, F]"]) -> "Result[Okay, F]":
+    def or_else[F: Exception](
+        self, op: Callable[[Error], "Result[Okay, F]"]
+    ) -> "Result[Okay, F]":
         if self.is_err():
             return op(self.unwrap_err())
         return Result[Okay, F].Ok(self.unwrap())

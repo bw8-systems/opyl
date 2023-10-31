@@ -52,9 +52,7 @@ def attempt[T](stack: Stack, parser: Parser[T]) -> ParseResult[T]:
     return parser().exit(stack.drop, stack.pop)
 
 
-def between[
-    Before, Between, After
-](
+def between[Before, Between, After](
     parse_before: Parser[Before],
     parse_between: Parser[Between],
     parse_after: Parser[After],
@@ -80,9 +78,9 @@ def choice[T](stack: Stack, parsers: Sequence[Parser[T]]) -> ParseResult[T]:
     return Error(UnexpectedToken())
 
 
-def either[
-    T, U
-](stack: Stack, this: Parser[T], that: Parser[U]) -> ParseResult[T] | ParseResult[U]:
+def either[T, U](
+    stack: Stack, this: Parser[T], that: Parser[U]
+) -> ParseResult[T] | ParseResult[U]:
     match this():
         case Okay(ok):
             return Okay(ok)

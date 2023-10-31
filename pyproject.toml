@@ -1,21 +1,24 @@
 [tool.poetry]
 name = "opyl"
 version = "0.1.0"
-description = "Opal bytecode compiler and interpreter in Python"
+description = "Opal bootstrap transpiler in Python"
 authors = ["bwburnsides <19192452+bwburnsides@users.noreply.github.com>"]
 readme = "README.md"
+packages = [ { include = "**/*.py", from = "."  }]
 
 [tool.poetry.dependencies]
-python = "^3.12.0rc1"
+python = "^3.12.0"
 pytest = "^7.4.2"
-black = "^23.9.1"
-mypy = "^1.5.1"
-ruff = "^0.0.290"
+ruff = "^0.1.3"
 pyright = "^1.1.327"
+pytest-cov = "^4.1.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+pythonpath = ["opyl"]
 
 [tool.pyright]
 typeCheckingMode = "strict"
