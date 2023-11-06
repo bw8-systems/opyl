@@ -1,196 +1,316 @@
-"""
-Tools for parsing the Opal grammar.
-"""
 from dataclasses import dataclass
-from typing import Callable, Sequence, Any
-from functools import partial
-
-from compile import token, node
-
-from support.split_monad import Result, Okay, Error, Option, Nil, Some
+import typing as t
 
 
-class ParseException(ValueError):
-    ...
+from . import lex
+from . import tokens
+from . import nodes
+from . import stream
+from . import combinators
+from . import errors
+from .tokens import KeywordKind, PrimitiveKind
 
-
-class UnexpectedEOF(ParseException):
-    ...
-
-
-class UnexpectedToken(ParseException):
-    ...
-
-
-type ParseResult[T] = Result[T, ParseException]
-type Parser[T] = Callable[[], ParseResult[T]]
+type Parser[T] = t.Callable[[], T]
 
 
 @dataclass
-class Stack:
-    # TODO: Maybe should not live here.
-    index: int = 0
+class BaseParser:
+    stream: stream.Stream[tokens.Token]
 
+    def one_or_none[T](self, parser: Parser[T]) -> combinators.Combinator[T | None]:
+        return combinators.OneOrNone(self.stream, parser)
+
+    def parse_one_or_none[T](self, parser: Parser[T]) -> T | None:
+        return self.one_or_none(parser)()
+
+    def one_or_more[T](self, parser: Parser[T]) -> combinators.Combinator[list[T]]:
+        return combinators.OneOrMore(self.stream, parser)
+
+    def parse_one_or_more[T](self, parser: Parser[T]) -> list[T]:
+        return self.one_or_more(parser)()
+
+    def zero_or_more[T](self, parser: Parser[T]) -> combinators.Combinator[list[T]]:
+        return combinators.ZeroOrMore(self.stream, parser)
+
+    def parse_zero_or_more[T](self, parser: Parser[T]) -> list[T]:
+        zero_or_more = combinators.ZeroOrMore(self.stream, parser)
+        return zero_or_more()
+
+    def between[Open, Close, Between](
+        self, open: Parser[Open], close: Parser[Close], between: Parser[Between]
+    ) -> combinators.Combinator[tuple[Open, Close, Between]]:
+        parser = combinators.Between(open=open, close=close, between=between)
+        return parser
+
+    def parse_between[Open, Close, Between](
+        self, open: Parser[Open], close: Parser[Close], between: Parser[Between]
+    ) -> tuple[Open, Close, Between]:
+        parser = combinators.Between(open=open, close=close, between=between)
+        return parser()
+
+    def either[A, B](self, parser_a: Parser[A], parser_b: Parser[B]) -> A | B:
+        a_or_none = self.parse_one_or_none(parser_a)
+        if a_or_none is not None:
+            return a_or_none
+
+        return parser_b()
+
+    def choice[T](self, *choices: Parser[T]) -> T:
+        for choice in choices:
+            item = self.parse_one_or_none(choice)
+            if item is not None:
+                return item
+
+        raise errors.UnexpectedToken()
+
+
+@dataclass
+class TokenParser(BaseParser):
     def __post_init__(self):
-        self.stack = list[int]()
+        self.primitive = {
+            kind: combinators.Primitive(self.stream, kind) for kind in PrimitiveKind
+        }
 
-    def push(self):
-        self.stack.append(self.index)
+        self.keyword = {
+            kind: combinators.Keyword(self.stream, kind) for kind in KeywordKind
+        }
 
-    def drop(self) -> int:
-        try:
-            return self.stack.pop()
-        except IndexError:
-            raise RuntimeError  # TODO
+        self.identifier_ = combinators.Identifier(self.stream)
 
-    def pop(self):
-        self.index = self.drop()
+    def parse_identifier(self) -> tokens.Identifier:
+        return self.identifier_.parse()
 
+    def identifier(self) -> tokens.Identifier:
+        self.zero_or_more(self.whitespace)
 
-def attempt[T](stack: Stack, parser: Parser[T]) -> ParseResult[T]:
-    stack.push()
-    return parser().exit(stack.drop, stack.pop)
+        peeked = self.stream.peek()
+        if peeked is None:
+            raise errors.UnexpectedEOF()
+        if isinstance(peeked, tokens.Identifier):
+            self.stream.next()
+            return peeked
+        raise errors.UnexpectedToken()
 
+    def integer(self) -> tokens.IntegerLiteral:
+        self.zero_or_more(self.whitespace)
 
-def between[Before, Between, After](
-    parse_before: Parser[Before],
-    parse_between: Parser[Between],
-    parse_after: Parser[After],
-) -> ParseResult[Between]:
-    between = parse_before().and_then(lambda _: parse_between())
-    if between.is_err():
-        return between
+        peeked = self.stream.peek()
+        if peeked is None:
+            raise errors.UnexpectedEOF()
+        if isinstance(peeked, tokens.IntegerLiteral):
+            self.stream.next()
+            return peeked
+        raise errors.UnexpectedToken()
 
-    after = parse_after()
-    if after.is_err():
-        return Error(after.unwrap_err())
+    def whitespace(self) -> tokens.Whitespace:
+        peeked = self.stream.peek()
+        if peeked is None:
+            raise errors.UnexpectedEOF()
+        if isinstance(peeked, tokens.Whitespace):
+            self.stream.next()
+            return peeked
+        raise errors.UnexpectedToken()
 
-    return between
-
-
-def choice[T](stack: Stack, parsers: Sequence[Parser[T]]) -> ParseResult[T]:
-    for parser in parsers:
-        option = attempt(stack, parser)
-
-        if option.is_some():
-            return Okay(option.unwrap())
-
-    return Error(UnexpectedToken())
-
-
-def either[T, U](
-    stack: Stack, this: Parser[T], that: Parser[U]
-) -> ParseResult[T] | ParseResult[U]:
-    match this():
-        case Okay(ok):
-            return Okay(ok)
-        case _:
-            return that()
-
-
-def many[T](stack: Stack, parser: Parser[T]) -> list[T]:
-    items: list[T] = []
-
-    while True:
-        match attempt(stack, parser):
-            case Nil():
-                break
-            case Some(item):
-                items.append(item)
-
-    return items
-
-
-class Stream[T]:
-    def __init__(self, stream: Sequence[T]):
-        self.stack = Stack()
-        self.stream = stream
-
-    def __getitem__(self, idx: int) -> Option[T]:
-        try:
-            return Some(self.stream[self.stack.index])
-        except IndexError:
-            return Nil()
-
-    def peek(self) -> Option[T]:
-        return self[self.stack.index]
-
-    def increment(self) -> None:
-        self.stack.index += 1
-
-    def next(self) -> ParseResult[T]:
-        return (
-            self.peek()
-            .and_then(lambda item: self.increment() or Some(item))
-            .ok_or(UnexpectedEOF())
-        )
-
-
-class TokenParser(Stream[token.Token]):
-    def primitive(
-        self,
-        kind: token.PrimitiveKind,
-    ) -> ParseResult[token.PrimitiveToken]:
-        match self.peek():
-            case Nil():
-                return Error(UnexpectedEOF())
-            case Some(token.PrimitiveToken(k) as tok) if k is kind:
-                self.next()
-                return Okay(tok)
-            case _:
-                return Error(UnexpectedToken())
-
-    def keyword(self, keyword: token.KeywordKind) -> ParseResult[node.Keyword]:
-        match self.peek():
-            case Nil():
-                return Error(UnexpectedEOF())
-            case Some(token.KeywordToken() as tok):
-                self.next()
-                return Okay(node.Keyword(span=tok.span, kind=keyword))
-            case _:
-                return Error(UnexpectedToken())
-
-    def identifier(self) -> ParseResult[node.IdentifierNode]:
-        match self.peek():
-            case Nil():
-                return Error(UnexpectedEOF())
-            case Some(token.IdentifierToken() as tok):
-                self.next()
-                return Okay(node.IdentifierNode(span=tok.span, name=tok.value))
-            case _:
-                return Error(UnexpectedToken())
-
-    def integer(self) -> ParseResult[node.IntegerNode]:
-        match self.peek():
-            case Nil():
-                return Error(UnexpectedEOF())
-            case Some(token.IntegerToken() as tok):
-                self.next()
-                return Okay(node.IntegerNode(span=tok.span, value=tok.value))
-            case _:
-                return Error(UnexpectedToken())
+    def space_then[T](self, parser: Parser[T]) -> T:
+        self.whitespace()
+        return parser()
 
 
 @dataclass
 class OpalParser(TokenParser):
-    def parse_variable_declaration(self) -> ParseResult[Any]:
-        match attempt(
-            self.stack, partial(self.keyword, token.KeywordKind.Let)
-        ).and_then(
-            lambda keyword: self.identifier().and_then(
-                lambda identifier: Okay((keyword, identifier))
-            )
-        ):
-            case Error(err):
-                return Error(err)
-            case Okay((keyword, identifier)):
-                self.primitive(token.PrimitiveKind.Colon).and_then(
-                    lambda _: self.identifier()
-                ).and_then(
-                    lambda type_name: self.primitive(token.PrimitiveKind.Equals).ok()
-                )
+    def parse_variable_declaration(self) -> nodes.VariableDeclaration:
+        # let [mut] name: type = initializer newline
 
-        return NotImplemented
+        keyword = self.keyword[KeywordKind.Let].parse()
 
-    def parse_expression(self) -> ParseResult[Any]:
+        self.whitespace()
+
+        mut_or_none = self.space_then(self.one_or_none(self.keyword[KeywordKind.Mut]))
+        if mut_or_none is not None:
+            self.whitespace()
+
+        identifier = (
+            combinators.Identifier(self.stream)
+            .then(self.primitive[PrimitiveKind.Colon])
+            .parse()
+        )
+
+        type_ = (
+            combinators.ParserWrapper(self.parse_type)
+            .then(self.primitive[PrimitiveKind.Equal])
+            .parse()
+        )
+
+        itor = self.parse_expression()
+        newline = self.primitive[PrimitiveKind.NewLine].parse()
+
+        return nodes.VariableDeclaration(
+            span=lex.Span(
+                start=keyword.span.start,
+                stop=newline.span.stop,
+            ),
+            mut=mut_or_none,
+            name=identifier.identifier,
+            type=type_.name,
+            initializer=itor,
+        )
+
+    def parse_enum_declaration(self) -> nodes.EnumDeclaration:
+        keyword = self.keyword[KeywordKind.Enum].parse()
+        identifier = self.space_then(self.identifier)
+
+        _opening, closing, members = self.parse_between(
+            open=self.primitive[PrimitiveKind.LeftBrace],
+            close=self.primitive[PrimitiveKind.RightBrace].then(
+                self.primitive[PrimitiveKind.NewLine]
+            ),
+            between=self.one_or_more(
+                self.primitive[PrimitiveKind.Comma].then_(self.identifier)
+            ),
+        )
+
+        return nodes.EnumDeclaration(
+            span=keyword.span + closing.span,
+            identifier=identifier,
+            members=members,
+        )
+
+    def parse_struct(self) -> nodes.Struct:
         ...
+
+    def parse_type(self) -> nodes.Type:
+        token = self.choice(
+            self.keyword[KeywordKind.U8],
+            self.keyword[KeywordKind.Char],
+        )
+
+        return nodes.Type(span=token.span, name=token.kind.value)
+
+    def parse_statement(self) -> nodes.Statement:
+        ...
+
+    def parse_paramspec(self) -> nodes.ParamSpec:
+        # NOTE: that "mut type" is part of the type not the paramspec. So this
+        # parser does not check for "mut". The type parser should do that.
+        # Syntax:
+        # anon name: type,
+        anon = self.parse_one_or_none(self.keyword[KeywordKind.Anon])
+        identifier = self.identifier()
+        self.primitive[PrimitiveKind.Colon].parse()
+        param_type = self.parse_type()
+        comma = self.primitive[PrimitiveKind.Comma].parse()
+
+        if anon is not None:
+            start_span = anon.span
+        else:
+            start_span = identifier.span
+
+        return nodes.ParamSpec(
+            span=start_span + comma.span,
+            is_anon=bool(anon),
+            field=nodes.Field(
+                span=stream.Span(
+                    start=identifier.span.start, stop=param_type.span.stop
+                ),
+                name=identifier.identifier,
+                type=param_type,
+            ),
+        )
+
+    def parse_generic_paramspec(self) -> nodes.GenericParamSpec:
+        ...
+
+    def parse_function_signature(self) -> nodes.FunctionSignature:
+        # def foo(anon name: mut type, ...) -> type
+        keyword = self.keyword[KeywordKind.Def].parse()
+        identifier = self.identifier()
+
+        _left, right, params = self.parse_between(
+            open=self.primitive[PrimitiveKind.LeftParenthesis],
+            close=self.primitive[PrimitiveKind.RightParenthesis],
+            between=self.zero_or_more(self.parse_paramspec),
+        )
+
+        return_type = None
+        return_arrow = self.parse_one_or_none(self.primitive[PrimitiveKind.RightArrow])
+
+        # TODO: Type could be keyword or identifier
+        if return_arrow is not None:
+            return_type = self.identifier()
+
+        if return_type is None:
+            stop_span = right.span
+        else:
+            stop_span = return_type.span
+            return_type = return_type.identifier
+
+        return nodes.FunctionSignature(
+            span=keyword.span + stop_span,
+            name=identifier.identifier,
+            params=params,
+            return_type=return_type,
+        )
+
+    def parse_method_signature(self) -> nodes.MethodSignature:
+        ...
+
+    def parse_function(self) -> nodes.Function:
+        signature = self.parse_function_signature()
+        _opening, closing, body = self.parse_between(
+            open=self.primitive[PrimitiveKind.LeftParenthesis],
+            close=self.primitive[PrimitiveKind.RightParenthesis],
+            between=self.zero_or_more(self.parse_statement),
+        )
+
+        return nodes.Function(
+            span=signature.span + closing.span,
+            signature=signature,
+            body=body,
+        )
+
+    def parse_trait_declaration(self) -> nodes.TraitDeclaration:
+        keyword = self.keyword[KeywordKind.Trait].parse()
+        identifier = combinators.Whitespace(self.stream).then_(self.identifier).parse()
+
+        generic_params = []
+        if (
+            self.parse_one_or_none(self.primitive[PrimitiveKind.LeftBracket])
+            is not None
+        ):
+            generic_params = (
+                self.zero_or_more(
+                    combinators.ParserWrapper(self.parse_generic_paramspec).then(
+                        self.primitive[PrimitiveKind.Comma]
+                    )
+                )
+                .then(self.primitive[PrimitiveKind.RightBracket])
+                .parse()
+            )
+
+        trait_bases = (
+            self.one_or_none(self.primitive[PrimitiveKind.LeftParenthesis])
+            .then_(
+                self.zero_or_more(
+                    self.identifier_.then(self.primitive[PrimitiveKind.Comma])
+                )
+            )
+            .then(self.primitive[PrimitiveKind.RightParenthesis])
+        ).parse()
+
+        return nodes.TraitDeclaration(
+            span=stream.Span(
+                start=keyword.span.start, stop=stream.TextPosition.default()
+            ),
+            name=identifier.identifier,
+            bases=trait_bases,
+            generic_params=generic_params,
+            methods=[],
+            functions=[],
+        )
+
+    def parse_expression(self) -> nodes.Expression:
+        ...
+
+
+def parse(tokens: list[tokens.Token]):
+    ...

@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 import enum
 
-from compile import node
+from opyl.compile import nodes
 
 
 class SemanticErrorKind(enum.Enum):
@@ -42,51 +42,51 @@ class SymbolTable:
             raise SemanticError(SemanticErrorKind.UndefinedSymbol)
 
 
-class SymbolTableBuilder(node.NodeVisitor):
+class SymbolTableBuilder(nodes.NodeVisitor):
     def __init__(self):
         self.table = SymbolTable()
 
-    def visit_keyword(self, keyword: node.Keyword) -> None:
+    def visit_keyword(self, keyword: nodes.Keyword) -> None:
         raise NotImplementedError
 
-    def visit_integer(self, integer: node.Integer) -> None:
+    def visit_integer(self, integer: nodes.Integer) -> None:
         raise NotImplementedError
 
-    def visit_identifier(self, ident: node.Identifier) -> None:
+    def visit_identifier(self, ident: nodes.Identifier) -> None:
         raise NotImplementedError
 
-    def visit_expression(self, expr: node.Expression) -> None:
+    def visit_expression(self, expr: nodes.Expression) -> None:
         raise NotImplementedError
 
-    def visit_primitive_type(self, type: node.PrimitiveType) -> None:
+    def visit_primitive_type(self, type: nodes.PrimitiveType) -> None:
         raise NotImplementedError
 
-    def visit_identifier_type(self, type: node.IdentifierType) -> None:
+    def visit_identifier_type(self, type: nodes.IdentifierType) -> None:
         raise NotImplementedError
 
-    def visit_array_type(self, type: node.ArrayType) -> None:
+    def visit_array_type(self, type: nodes.ArrayType) -> None:
         raise NotImplementedError
 
-    def visit_field(self, field: node.Field) -> None:
+    def visit_field(self, field: nodes.Field) -> None:
         raise NotImplementedError
 
-    def visit_typedef(self, typedef: node.Typedef) -> None:
+    def visit_typedef(self, typedef: nodes.Typedef) -> None:
         raise NotImplementedError
 
-    def visit_const(self, const: node.Const) -> None:
+    def visit_const(self, const: nodes.Const) -> None:
         raise NotImplementedError
 
-    def visit_enum(self, enum: node.Enum) -> None:
+    def visit_enum(self, enum: nodes.Enum) -> None:
         raise NotImplementedError
 
-    def visit_struct(self, struct: node.Struct) -> None:
+    def visit_struct(self, struct: nodes.Struct) -> None:
         raise NotImplementedError
 
-    def visit_module(self, module: node.Module) -> None:
+    def visit_module(self, module: nodes.Module) -> None:
         raise NotImplementedError
 
 
-def get_symbols(tree: Sequence[node.Node]) -> SymbolTable:
+def get_symbols(tree: Sequence[nodes.Node]) -> SymbolTable:
     builder = SymbolTableBuilder()
 
     for declaration in tree:

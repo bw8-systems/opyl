@@ -7,31 +7,52 @@ from compile import parse
 # from support.split_monad import Okay, Error
 
 
-tokens_or_error = lex.tokenize(
-    """
-    module Foo {
-        struct Token {
-            Span span,
-            TokenKind kind,
-        };
-    };
-    """
-)
+opal_fibonacci = """
+union Option[T] = T | None
 
-if isinstance(tokens_or_error, lex.LexError):
-    print(f"Lexing failed with {tokens_or_error}")
-    exit()
-tokens = tokens_or_error
+trait Iterator[T] {
+    mem next() -> Option[T]
+}
 
-for token in tokens:
-    pprint(token.kind)
-exit()
+class Range(Iterator[u32]) {
+    start: u32
+    stop: u32
+    current: u32
 
-modules = parse.parse(tokens)
-if isinstance(modules, parse.ParseError):
-    print(f"Error: {modules}")
-    exit()
+    pub def new(start: u32, stop: u32) -> Range {
+        return Range(
+            start=start,
+            stop=stop,
+            current=start,
+        )
+    }
 
-print("Printing modules:")
-for module in modules:
-    pprint(module)
+    pub mem next() -> Option[T] {
+        if (self.current < self.stop) {
+            self.current += 1
+            return self.current - 1
+        }
+
+        return None
+    }
+}
+
+def fibonacci(n: u32) -> u32 {
+    if (n == 0) {
+        return 1
+    }
+
+    if (n == 1) {
+        return 1
+    }
+
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+fn main() {
+    for val in Range::new(start=0, stop=10) {
+        let fib: u32 = fibonacci(val)
+        print(fib)
+    }
+}
+"""
