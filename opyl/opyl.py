@@ -1,10 +1,5 @@
-from pprint import pprint
-
 from compile import lex
 from compile import parse
-
-
-# from support.split_monad import Okay, Error
 
 
 opal_fibonacci = """
@@ -56,3 +51,6 @@ fn main() {
     }
 }
 """
+
+var_decl = " "
+parse.parse(lex.tokenize(var_decl))

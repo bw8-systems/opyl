@@ -14,7 +14,6 @@ class Tokenizer:
 
     def next_token(self) -> tokens.Token:
         current = self.stream.current()
-
         scanners_and_predicates: tuple[tuple[Scanner, Predicate[str]], ...] = (
             (self.tokenize_whitespace, str.isspace),
             (self.tokenize_comment, lambda char: char == "#"),
@@ -29,7 +28,7 @@ class Tokenizer:
             if predicate(current):
                 return scanner()
 
-        raise errors.IllegalCharacter()
+        raise errors.IllegalCharacter(current)
 
     def take_while(self, predicate: Predicate[str]) -> str:
         start = self.stream.index.copy()
@@ -42,7 +41,7 @@ class Tokenizer:
 
         if self.stream.index == start:
             self.stream.index = start
-            raise errors.NoMatch()
+            raise errors.NoMatch(self.stream.current())
 
         return self.stream.text[start.absolute : self.stream.index.absolute]
 
@@ -63,12 +62,11 @@ class Tokenizer:
                     kind=tokens.PrimitiveKind(lexeme),
                 )
 
-        raise errors.UnexpectedCharacter()
+        raise errors.UnexpectedCharacter(self.stream.current())
 
     def tokenize_whitespace(self) -> tokens.Whitespace:
         start = self.stream.index.copy()
 
-        # TODO: Is the an appropriate list of characters?
         self.take_while(lambda char: char in {" ", "\r", "\t"})
         return tokens.Whitespace(span=Span(start=start, stop=self.stream.index.copy()))
 
@@ -79,7 +77,7 @@ class Tokenizer:
             raise errors.UnexpectedEOF()
 
         if current != "#":
-            raise errors.UnexpectedCharacter()
+            raise errors.UnexpectedCharacter(current)
 
         self.stream.advance(newline=False)
         try:
@@ -88,7 +86,7 @@ class Tokenizer:
             comment = ""
 
         return tokens.Comment(
-            span=Span(start=start, stop=self.stream.index), comment=comment
+            span=Span(start=start, stop=self.stream.index.copy()), comment=comment
         )
 
     def tokenize_integer(self) -> tokens.IntegerLiteral:
@@ -97,7 +95,7 @@ class Tokenizer:
         try:
             integer_string = self.take_while(str.isdigit)
         except errors.NoMatch:
-            raise errors.UnexpectedCharacter
+            raise errors.UnexpectedCharacter(self.stream.current())
 
         return tokens.IntegerLiteral(
             span=Span(start=start, stop=self.stream.index.copy()),
@@ -111,13 +109,15 @@ class Tokenizer:
             raise errors.UnexpectedEOF()
 
         if not (current.isalpha() or current == "_"):
-            raise errors.UnexpectedCharacter()
+            raise errors.UnexpectedCharacter(current)
 
+        print("here")
         name = self.take_while(
             lambda char: char == "_" or char.isalpha() or char.isalnum()
         )
+        print(name)
 
-        span = Span(start=start, stop=self.stream.index)
+        span = Span(start=start, stop=self.stream.index.copy())
         try:
             return tokens.Keyword(span=span, kind=tokens.KeywordKind(name))
         except ValueError:
@@ -130,13 +130,13 @@ class Tokenizer:
             raise errors.UnexpectedEOF()
 
         if current != '"':
-            raise errors.UnexpectedCharacter()
+            raise errors.UnexpectedCharacter(current)
 
         self.stream.advance(newline=False)
         for char in self.stream:
             if char == "\n":
                 self.stream.index = start
-                raise errors.UnexpectedCharacter()
+                raise errors.UnexpectedCharacter(char)
 
             self.stream.advance(newline=False)
 
@@ -148,7 +148,9 @@ class Tokenizer:
                     ],
                 )
 
-        raise errors.UnclosedStringLiteral()
+        raise errors.UnclosedStringLiteral(
+            self.stream.text[start : self.stream.current()]
+        )
 
     def tokenize_character(self) -> tokens.CharacterLiteral:
         start = self.stream.index.copy()
@@ -157,7 +159,7 @@ class Tokenizer:
             raise errors.UnexpectedEOF()
 
         if current != "'":
-            raise errors.UnexpectedCharacter()
+            raise errors.UnexpectedCharacter(current)
 
         self.stream.advance(newline=False)
         char = self.stream.current()
@@ -166,7 +168,7 @@ class Tokenizer:
         closing = self.stream.current()
         self.stream.advance(newline=False)
         if closing != "'":
-            raise errors.UnexpectedCharacter()
+            raise errors.UnexpectedCharacter(closing)
 
         return tokens.CharacterLiteral(
             span=Span(
