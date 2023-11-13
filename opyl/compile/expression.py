@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from opyl import nodes
 from opyl.compile.nodes import BinaryOperator, BinaryExpression
 
@@ -8,29 +10,23 @@ from opyl.compile.positioning import Span, Stream
 type Token = IntegerLiteral | Primitive
 
 
-# TODO: Make infallible.
-class ExpressionParser(comb.Combinator[nodes.Expression | None]):
-    def __call__(self) -> nodes.Expression | None:
+@dataclass
+class ExpressionParser(comb.Combinator[nodes.Expression]):
+    def __post_init__(self):
+        self.integer_literal = comb.IntegerLiteral(self.stream)
+
+    def __call__(self) -> nodes.Expression:
         return self.pratt(0)
 
-    def prefix(self) -> nodes.Expression | None:
-        peeked = self.stream.peek()
-        if isinstance(peeked, IntegerLiteral):
-            self.stream.next()
-            return nodes.IntegerLiteral(peeked.span, peeked.integer)
+    def prefix(self) -> nodes.Expression:
+        return self.integer_literal.parse()
 
-        return None
-
-    def pratt(self, precedence_limit: int) -> nodes.Expression | None:
-        left = self.prefix()
-        if left is None:
-            return None
-
-        return self.pratt_loop(precedence_limit, left)
+    def pratt(self, precedence_limit: int) -> nodes.Expression:
+        return self.pratt_loop(precedence_limit, self.prefix())
 
     def pratt_loop(
         self, precedence_limit: int, left: nodes.Expression
-    ) -> nodes.Expression | None:
+    ) -> nodes.Expression:
         peeked = self.stream.peek()
         if not (
             isinstance(peeked, Primitive) and peeked.kind in BinaryOperator.values()
@@ -43,10 +39,8 @@ class ExpressionParser(comb.Combinator[nodes.Expression | None]):
             return left
 
         self.stream.next()
-        right = self.pratt(precedence)
-        if right is None:
-            return None
 
+        right = self.pratt(precedence)
         new_left = BinaryExpression(Span.default(), operator, left, right)
         return self.pratt_loop(precedence_limit, new_left)
 
