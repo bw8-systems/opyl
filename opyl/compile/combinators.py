@@ -1,78 +1,138 @@
 import typing as t
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
-from functools import singledispatchmethod
 
-from . import tokens
+from . import lexemes
 from . import nodes
-from . import stream
+from . import positioning
 from . import errors
 
 
 type Parser[T] = t.Callable[[], T]
 
 
-def parse[T](parser: Parser[T]) -> T:
-    return parser()
-
-
 @dataclass
 class Combinator[T](ABC):
-    stream: stream.Stream[tokens.Token]
+    stream: positioning.Stream[lexemes.Token]
 
     @abstractmethod
     def __call__(self) -> T:
         raise NotImplementedError()
 
-    @singledispatchmethod
-    def followed_by(self, _separator: t.Any) -> "Combinator[T]":
-        raise NotImplementedError
+    def parse(self) -> T:
+        return self()
 
-    @followed_by.register
-    def _[U](self, separator: Parser[U]) -> "Combinator[T]":
-        def wrapper() -> T:
-            item = self()
-            separator()
-            return item
+    def consume(
+        self, kind: lexemes.PrimitiveKind | lexemes.KeywordKind
+    ) -> "Combinator[T]":
+        if isinstance(kind, lexemes.PrimitiveKind):
+            return Drop(
+                self.stream, parser=self, separator=Primitive(self.stream, kind)
+            )
+        return Drop(self.stream, parser=self, separator=Keyword(self.stream, kind))
 
-        return Lift(wrapper)
+    def consume_then[U](
+        self, kind: lexemes.PrimitiveKind, parser: "Combinator[U]"
+    ) -> "Combinator[U]":
+        return DropThen(
+            self.stream, parser=parser, separator=Primitive(self.stream, kind)
+        )
 
-    @followed_by.register
-    def _[U](self, kind: tokens.PrimitiveKind) -> "Combinator[T]":
-        def wrapper() -> T:
-            item = self()
-            sep_parser = Primitive(self.stream, kind)
-            sep_parser()
-            return item
+    def lift[U](self, parser: Parser[U]) -> "Combinator[U]":
+        return Lift(stream=self.stream, parser=parser)
 
-        return Lift(wrapper)
+    def identifier(self) -> "Combinator[nodes.Identifier]":
+        return Identifier(self.stream)
 
-    def then[U](self, then: Parser[U]) -> "Combinator[U]":
-        def wrapper() -> U:
-            self()
-            return then()
+    def primitive(self, kind: lexemes.PrimitiveKind) -> "Combinator[lexemes.Primitive]":
+        return Primitive(self.stream, kind)
 
-        return Lift(wrapper)
+    def between[Start, Stop, InBetween](
+        self, start: Parser[Start], stop: Parser[Stop], between: Parser[InBetween]
+    ) -> "Combinator[InBetween]":
+        return Between(stream=self.stream, start=start, stop=stop, parser=between)
 
-    def and_also[U](self, this: Parser[U]) -> "Combinator[tuple[T, U]]":
-        def wrapper() -> tuple[T, U]:
-            return self(), this()
+    def also[U](self, this: "Combinator[U]") -> "Combinator[tuple[T, U]]":
+        return And(self.stream, self, this)
 
-        return Lift(wrapper)
+
+@dataclass
+class Primitive(Combinator[lexemes.Primitive]):
+    kind: lexemes.PrimitiveKind
+
+    def __call__(self) -> lexemes.Primitive:
+        peeked = self.stream.peek()
+        if isinstance(peeked, lexemes.Primitive) and peeked.kind is self.kind:
+            self.stream.next()
+            return peeked
+        raise errors.UnexpectedToken()
+
+
+@dataclass
+class Between[Start, Stop, Between](Combinator[Between]):
+    start: Parser[Start]
+    stop: Parser[Stop]
+    parser: Parser[Between]
+
+    def __call__(self) -> Between:
+        self.start()
+        between = self.parser()
+        self.stop()
+        return between
+
+
+@dataclass
+class Drop[T, U](Combinator[T]):
+    parser: Combinator[T]
+    separator: Combinator[U]
+
+    def __call__(self) -> T:
+        item = self.parser()
+        self.separator()
+        return item
+
+
+@dataclass
+class DropThen[T, U](Combinator[U]):
+    separator: Combinator[T]
+    parser: Combinator[U]
+
+    def __call__(self) -> U:
+        self.separator()
+        return self.parser()
 
 
 @dataclass
 class Lift[T](Combinator[T]):
-    # Overriding __init__ to drop the stream parameter
-    def __init__(self, parser: Parser[T]):
-        self.parser = parser
+    parser: Parser[T]
 
     def __call__(self) -> T:
         return self.parser()
 
 
 @dataclass
-class OneOrNone[T](Combinator[T | None]):
+class And[T, U](Combinator[tuple[T, U]]):
+    first: Combinator[T]
+    second: Combinator[U]
+
+    def __call__(self) -> tuple[T, U]:
+        return self.first(), self.second()
+
+
+@dataclass
+class Either[T, U](Combinator[T | U]):
+    first: Combinator[T]
+    second: Combinator[U]
+
+    def __call__(self) -> T | U:
+        item = Maybe(self.stream, self.first).parse()
+        if item is None:
+            return self.second.parse()
+        raise errors.ParseError
+
+
+@dataclass
+class Maybe[T](Combinator[T | None]):
     parser: Parser[T]
 
     def __call__(self) -> T | None:
@@ -83,181 +143,29 @@ class OneOrNone[T](Combinator[T | None]):
 
 
 @dataclass
-class ZeroOrMore[T](Combinator[list[T]]):
+class Many[T](Combinator[list[T]]):
     parser: Parser[T]
 
     def __call__(self) -> list[T]:
-        one_or_none = OneOrNone(self.stream, self.parser)
+        optional_parser = Maybe(self.stream, self.parser)
         items = list[T]()
 
         while True:
-            item = one_or_none()
+            item = optional_parser()
             if item is None:
                 break
-
             items.append(item)
 
         return items
 
 
 @dataclass
-class OneOrMore[T](Combinator[list[T]]):
-    parser: Parser[T]
-
-    def __call__(self) -> list[T]:
-        zero_or_more = ZeroOrMore(self.stream, self.parser)
-        items = [self.parser()]
-        items.extend(zero_or_more())
-        return items
-
-
-class Whitespace(Combinator[tokens.Whitespace]):
-    def __call__(self) -> tokens.Whitespace:
-        peeked = self.stream.peek()
-        if isinstance(peeked, tokens.Whitespace):
-            self.stream.next()
-            return peeked
-        raise errors.UnexpectedToken()
-
-
-class Identifier(Combinator[nodes.Identifier]):
-    def __call__(self) -> nodes.Identifier:
-        ZeroOrMore(self.stream, Whitespace(self.stream))()
-
-        peeked = self.stream.peek()
-        if isinstance(peeked, tokens.Identifier):
-            self.stream.next()
-            return nodes.Identifier(span=peeked.span, name=peeked.identifier)
-        raise errors.UnexpectedToken()
-
-
-class IntegerLiteral(Combinator[nodes.IntegerLiteral]):
-    def __call__(self) -> nodes.IntegerLiteral:
-        ZeroOrMore(self.stream, Whitespace(self.stream))()
-
-        peeked = self.stream.peek()
-        if isinstance(peeked, tokens.IntegerLiteral):
-            self.stream.next()
-            return nodes.IntegerLiteral(span=peeked.span, integer=peeked.integer)
-        raise errors.UnexpectedToken()
-
-
-@dataclass
-class Primitive(Combinator[tokens.Primitive]):
-    kind: tokens.PrimitiveKind
-
-    def __call__(self) -> tokens.Primitive:
-        parse(ZeroOrMore(self.stream, Whitespace(self.stream)))
-
-        peeked = self.stream.peek()
-        if isinstance(peeked, tokens.Primitive) and peeked.kind is self.kind:
-            self.stream.next()
-            return peeked
-        raise errors.UnexpectedToken()
-
-
-@dataclass
-class Keyword(Combinator[tokens.Keyword]):
-    kind: tokens.KeywordKind
-
-    def __call__(self) -> tokens.Keyword:
-        ZeroOrMore(self.stream, Whitespace(self.stream))()
-
-        peeked = self.stream.peek()
-        if isinstance(peeked, tokens.Keyword) and peeked.kind is self.kind:
-            self.stream.next()
-            return peeked
-        raise errors.UnexpectedToken()
-
-
-@dataclass
-class Between[Open, Close, Between](Combinator[tuple[Open, Close, Between]]):
-    open: Parser[Open]
-    close: Parser[Close]
-    between: Parser[Between]
-
-    def __call__(self) -> tuple[Open, Close, Between]:
-        return self.open(), self.close(), self.between()
-
-
-@dataclass
-class Either[Left, Right](Combinator[Left | Right]):
-    left: Parser[Left]
-    right: Parser[Right]
-
-    def __call__(self) -> Left | Right:
-        left_or_none = parse(OneOrNone(self.stream, self.left))
-        if left_or_none is not None:
-            return left_or_none
-
-        return parse(self.right)
-
-
-@dataclass
-class ManyEither[Left, Right](Combinator[tuple[list[Left], list[Right]]]):
-    left: Parser[Left]
-    right: Parser[Right]
-    filter: t.Callable[[t.Any], t.TypeGuard[Left]]
-
-    def __post_init__(self):
-        self.parser = OneOrNone(
-            stream=self.stream,
-            parser=Either(
-                stream=self.stream,
-                left=self.left,
-                right=self.right,
-            ),
-        )
-
-    # This song and dance is being done because Pyright is not able to
-    # properly type narrow to Right in __call__ despite excluding None
-    # and excluding Left.
-    def anti_filter(self, item: Left | Right) -> t.TypeGuard[Right]:
-        return not self.filter(item)
-
-    def __call__(self) -> tuple[list[Left], list[Right]]:
-        lefts = list[Left]()
-        rights = list[Right]()
-
-        maybe_item = self.parser()
-
-        while maybe_item is not None:
-            if self.filter(maybe_item):
-                lefts.append(maybe_item)
-            if self.anti_filter(maybe_item):
-                rights.append(maybe_item)
-
-            maybe_item = self.parser()
-
-        return lefts, rights
-
-
-# class OneOrMoreOfEither[Left, Right](Combinator[tuple[list[Left], list[Right]]]):
-#     left: Parser[Left]
-#     right: Parser[Right]
-#     filter: t.Callable[[t.Any], t.TypeGuard[Left]]
-
-#     def __post_init__(self):
-#         self.parser = OneOrMore(
-#             stream=self.stream,
-#             parser=Either(
-#                 stream=self.stream,
-#                 left=self.left,
-#                 right=self.right,
-#             ),
-#         )
-
-#     def __call__(self) -> tuple[list[Left], list[Right]]:
-#         item = self.parser()
-
-
-@dataclass
 class Choice[T](Combinator[T]):
-    choices: tuple[Parser[T], ...]
+    choices: t.Sequence[Parser[T]]
 
     def __call__(self) -> T:
         for choice in self.choices:
-            item = parse(OneOrNone(self.stream, choice))
+            item = Maybe(self.stream, choice).parse()
             if item is not None:
                 return item
 
@@ -265,54 +173,30 @@ class Choice[T](Combinator[T]):
 
 
 @dataclass
-class BaseTokenParser:
-    stream: stream.Stream[tokens.Token]
+class Keyword(Combinator[lexemes.Keyword]):
+    kind: lexemes.KeywordKind
 
-    def __post_init__(self):
-        self.primitive = {
-            kind: Primitive(self.stream, kind) for kind in tokens.PrimitiveKind
-        }
-        self.keyword = {kind: Keyword(self.stream, kind) for kind in tokens.KeywordKind}
+    def __call__(self) -> lexemes.Keyword:
+        peeked = self.stream.peek()
+        if isinstance(peeked, lexemes.Keyword) and peeked.kind is self.kind:
+            self.stream.next()
+            return peeked
+        raise errors.UnexpectedToken()
 
-        self.identifier = Identifier(self.stream)
-        self.integer = IntegerLiteral(self.stream)
-        self.whitespace = Whitespace(self.stream)
 
-    def one_or_none[T](self, parser: Parser[T]) -> OneOrNone[T | None]:
-        return OneOrNone(stream=self.stream, parser=parser)
+class Identifier(Combinator[nodes.Identifier]):
+    def __call__(self) -> nodes.Identifier:
+        peeked = self.stream.peek()
+        if isinstance(peeked, lexemes.Identifier):
+            self.stream.next()
+            return nodes.Identifier(span=peeked.span, name=peeked.identifier)
+        raise errors.UnexpectedToken()
 
-    def one_or_more[T](self, parser: Parser[T]) -> OneOrMore[T]:
-        return OneOrMore(stream=self.stream, parser=parser)
 
-    def zero_or_more[T](self, parser: Parser[T]) -> ZeroOrMore[T]:
-        return ZeroOrMore(stream=self.stream, parser=parser)
-
-    def between[Open, Close, InBetween](
-        self, open: Parser[Open], close: Parser[Close], between: Parser[InBetween]
-    ) -> Between[Open, Close, InBetween]:
-        return Between(stream=self.stream, open=open, close=close, between=between)
-
-    def between_pair[InBetween](
-        self, pair: tokens.GroupingPair, between: Parser[InBetween]
-    ) -> Between[tokens.Primitive, tokens.Primitive, InBetween]:
-        open, close = pair.value
-
-        return self.between(
-            open=self.primitive[open], close=self.primitive[close], between=between
-        )
-
-    def either[Left, Right](
-        self, left: Parser[Left], right: Parser[Right]
-    ) -> Combinator[Left | Right]:
-        return Either(stream=self.stream, left=left, right=right)
-
-    def many_either[Left, Right](
-        self,
-        left: Parser[Left],
-        right: Parser[Right],
-        filter: t.Callable[[t.Any], t.TypeGuard[Left]],
-    ) -> ManyEither[Left, Right]:
-        return ManyEither(stream=self.stream, left=left, right=right, filter=filter)
-
-    def choice[T](self, choices: tuple[Parser[T], ...]) -> Combinator[T]:
-        return Choice(stream=self.stream, choices=choices)
+class IntegerLiteral(Combinator[nodes.IntegerLiteral]):
+    def __call__(self) -> nodes.IntegerLiteral:
+        peeked = self.stream.peek()
+        if isinstance(peeked, lexemes.IntegerLiteral):
+            self.stream.next()
+            return nodes.IntegerLiteral(span=peeked.span, integer=peeked.integer)
+        raise errors.UnexpectedToken()

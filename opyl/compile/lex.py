@@ -1,28 +1,28 @@
 import typing as t
 
-from . import tokens
-from .stream import TextStream, Span
+from . import lexemes
+from .positioning import TextStream, Span
 from . import errors
 
 type Predicate[T] = t.Callable[[T], bool]
-type Scanner = t.Callable[[], tokens.Token]
+type Scanner = t.Callable[[], lexemes.Token]
 
 
 class Tokenizer:
     def __init__(self, data: str):
         self.stream = TextStream(data)
 
-    def next_token(self) -> tokens.Token:
+    def next_token(self) -> lexemes.Token:
         current = self.stream.current()
-        scanners_and_predicates: tuple[tuple[Scanner, Predicate[str]], ...] = (
-            (self.tokenize_whitespace, str.isspace),
+        scanners_and_predicates: list[tuple[Scanner, Predicate[str]]] = [
+            (self.tokenize_whitespace, lambda char: char in {" ", "\r", "\t"}),
             (self.tokenize_comment, lambda char: char == "#"),
             (self.tokenize_string, lambda char: char == '"'),
             (self.tokenize_character, lambda char: char == "'"),
             (self.tokenize_integer, str.isdigit),
             (self.tokenize_identifier_or_keyword, str.isalpha),
             (self.tokenize_primitive, lambda _char: True),
-        )
+        ]
 
         for scanner, predicate in scanners_and_predicates:
             if predicate(current):
@@ -48,32 +48,32 @@ class Tokenizer:
     def tokenize_primitive(self):
         start = self.stream.index.copy()
 
-        for kind in tokens.PrimitiveKind:
+        for kind in lexemes.PrimitiveKind:
             lexeme = kind.value
 
             if self.stream.startswith(lexeme):
                 self.stream.advance_for(lexeme)
 
-                return tokens.Primitive(
+                return lexemes.Primitive(
                     span=Span(
                         start=start,
                         stop=self.stream.index.copy(),
                     ),
-                    kind=tokens.PrimitiveKind(lexeme),
+                    kind=lexemes.PrimitiveKind(lexeme),
                 )
 
         raise errors.UnexpectedCharacter(self.stream.current())
 
-    def tokenize_whitespace(self) -> tokens.Whitespace:
+    def tokenize_whitespace(self) -> lexemes.Whitespace:
         start = self.stream.index.copy()
 
         self.take_while(lambda char: char in {" ", "\r", "\t"})
-        return tokens.Whitespace(span=Span(start=start, stop=self.stream.index.copy()))
+        return lexemes.Whitespace(span=Span(start=start, stop=self.stream.index.copy()))
 
-    def tokenize_comment(self) -> tokens.Comment:
+    def tokenize_comment(self) -> lexemes.Comment:
         start = self.stream.index.copy()
         current = self.stream.current()
-        if current == "\0":
+        if current == "":
             raise errors.UnexpectedEOF()
 
         if current != "#":
@@ -85,11 +85,11 @@ class Tokenizer:
         except errors.NoMatch:
             comment = ""
 
-        return tokens.Comment(
+        return lexemes.Comment(
             span=Span(start=start, stop=self.stream.index.copy()), comment=comment
         )
 
-    def tokenize_integer(self) -> tokens.IntegerLiteral:
+    def tokenize_integer(self) -> lexemes.IntegerLiteral:
         start = self.stream.index.copy()
 
         try:
@@ -97,36 +97,34 @@ class Tokenizer:
         except errors.NoMatch:
             raise errors.UnexpectedCharacter(self.stream.current())
 
-        return tokens.IntegerLiteral(
+        return lexemes.IntegerLiteral(
             span=Span(start=start, stop=self.stream.index.copy()),
             integer=int(integer_string),
         )
 
-    def tokenize_identifier_or_keyword(self) -> tokens.Identifier | tokens.Keyword:
+    def tokenize_identifier_or_keyword(self) -> lexemes.Identifier | lexemes.Keyword:
         start = self.stream.index.copy()
         current = self.stream.current()
-        if current == tokens.PrimitiveKind.Eof.value:
+        if current == lexemes.PrimitiveKind.Eof.value:
             raise errors.UnexpectedEOF()
 
         if not (current.isalpha() or current == "_"):
             raise errors.UnexpectedCharacter(current)
 
-        print("here")
         name = self.take_while(
             lambda char: char == "_" or char.isalpha() or char.isalnum()
         )
-        print(name)
 
         span = Span(start=start, stop=self.stream.index.copy())
         try:
-            return tokens.Keyword(span=span, kind=tokens.KeywordKind(name))
+            return lexemes.Keyword(span=span, kind=lexemes.KeywordKind(name))
         except ValueError:
-            return tokens.Identifier(span=span, identifier=name)
+            return lexemes.Identifier(span=span, identifier=name)
 
     def tokenize_string(self):
         start = self.stream.index.copy()
         current = self.stream.current()
-        if current == "\0":
+        if current == "":
             raise errors.UnexpectedEOF()
 
         if current != '"':
@@ -141,7 +139,7 @@ class Tokenizer:
             self.stream.advance(newline=False)
 
             if char == '"':
-                return tokens.StringLiteral(
+                return lexemes.StringLiteral(
                     span=Span(start=start, stop=self.stream.index.copy()),
                     string=self.stream.text[
                         start.absolute + 1 : self.stream.index.absolute - 1
@@ -149,13 +147,13 @@ class Tokenizer:
                 )
 
         raise errors.UnclosedStringLiteral(
-            self.stream.text[start : self.stream.current()]
+            self.stream.text[start.absolute : self.stream.index.absolute]
         )
 
-    def tokenize_character(self) -> tokens.CharacterLiteral:
+    def tokenize_character(self) -> lexemes.CharacterLiteral:
         start = self.stream.index.copy()
         current = self.stream.current()
-        if current is tokens.PrimitiveKind.Eof.value:
+        if current is lexemes.PrimitiveKind.Eof.value:
             raise errors.UnexpectedEOF()
 
         if current != "'":
@@ -170,7 +168,7 @@ class Tokenizer:
         if closing != "'":
             raise errors.UnexpectedCharacter(closing)
 
-        return tokens.CharacterLiteral(
+        return lexemes.CharacterLiteral(
             span=Span(
                 start=start,
                 stop=self.stream.index.copy(),
@@ -179,15 +177,15 @@ class Tokenizer:
         )
 
 
-def tokenize(source: str) -> list[tokens.Token]:
+def tokenize(source: str) -> list[lexemes.Token]:
     scanner = Tokenizer(source)
-    tokenized = list[tokens.Token]()
+    tokenized = list[lexemes.Token]()
 
     while True:
         token = scanner.next_token()
         if (
-            isinstance(token, tokens.Primitive)
-            and token.kind is tokens.PrimitiveKind.Eof
+            isinstance(token, lexemes.Primitive)
+            and token.kind is lexemes.PrimitiveKind.Eof
         ):
             break
 

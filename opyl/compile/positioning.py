@@ -18,7 +18,7 @@ class TextPosition:
             column=self.column,
         )
 
-    def increment(self, newline: bool) -> t.Self:
+    def increment(self, newline: bool) -> "TextPosition":
         return TextPosition(
             absolute=self.absolute + 1,
             line=self.line + 1 if newline else self.line,
@@ -40,6 +40,10 @@ class Span:
             start=self.start,
             stop=other.stop,
         )
+
+    @staticmethod
+    def default() -> "Span":
+        return Span(start=TextPosition.default(), stop=TextPosition.default())
 
 
 class TextStream:
@@ -66,10 +70,10 @@ class TextStream:
     def current(self) -> str:
         with contextlib.suppress(IndexError):
             return self.text[self.index.absolute]
-        return "\0"
+        return ""
 
     def startswith(self, pattern: str) -> bool:
-        return self.text.startswith(pattern)
+        return self.text[self.index.absolute :].startswith(pattern)
 
 
 @dataclasses.dataclass
@@ -97,6 +101,9 @@ class Stream[T]:
     def __init__(self, stream: t.Sequence[T]):
         self.stack = Stack()
         self.stream = stream
+
+    def __len__(self) -> int:
+        return len(self.stream)
 
     def peek(self) -> T | None:
         try:

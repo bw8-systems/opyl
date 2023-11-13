@@ -2,7 +2,7 @@ import enum
 import dataclasses
 
 
-from .stream import Span
+from .positioning import Span
 
 
 class KeywordKind(enum.Enum):
@@ -10,9 +10,24 @@ class KeywordKind(enum.Enum):
     Enum = "enum"
     Struct = "struct"
     Union = "union"
-    Def = "def"
+
     Let = "let"
     Const = "const"
+    Def = "def"
+
+    While = "while"
+    For = "for"
+    In = "in"
+    If = "if"
+    Else = "else"
+    When = "when"
+    Is = "is"
+    As = "as"
+
+    Return = "return"
+    Break = "break"
+    Continue = "Continue"
+
     U8 = "u8"
     Char = "char"
     Mut = "mut"
@@ -20,6 +35,15 @@ class KeywordKind(enum.Enum):
 
 
 class PrimitiveKind(enum.Enum):
+    Plus = "+"
+    Hyphen = "-"
+    Asterisks = "*"
+    ForwardSlash = "/"
+    Caret = "^"
+    Percent = "%"
+    At = "@"
+    Ampersand = "&"
+
     Colon = ":"
     Equal = "="
     LeftBrace = "{"
@@ -31,11 +55,10 @@ class PrimitiveKind(enum.Enum):
     LeftBracket = "["
     RightBracket = "]"
     Comma = ","
-    Hyphen = "-"
-    Pipe = "|"
     RightArrow = "->"
+    Pipe = "|"
     NewLine = "\n"
-    Eof = "\0"
+    Eof = ""
 
 
 class GroupingPair(enum.Enum):

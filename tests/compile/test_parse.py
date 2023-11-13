@@ -1,8 +1,8 @@
-from opyl.compile import lex
-from opyl.compile import parse
-from opyl.compile import stream
+from opyl import parse
+from opyl import nodes
 
-tokens = lex.tokenize(r"enum Color {}")
-decl = parse.OpalParser(stream.Stream(tokens)).parse_enum_declaration()
 
-# print(gen.generate([decl]))
+def test_parsing():
+    parser = parse.OpalParser("const foo: Foo = 5\n")
+    decls = parser()
+    assert len(decls) == 1

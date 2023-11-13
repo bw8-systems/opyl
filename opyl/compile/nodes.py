@@ -1,15 +1,39 @@
 from dataclasses import dataclass
+from enum import Enum
 
-from . import tokens
-from .stream import Span
-
-type Statement = VarDeclaration
-type TopLevelDeclaration = EnumDeclaration | VarDeclaration
+from .positioning import Span
 
 
 @dataclass
 class Node:
     span: Span
+
+
+type Statement = (
+    VarDeclaration
+    | ForLoop
+    | WhileLoop
+    | WhenStatement
+    | IfStatement
+    | ReturnStatement
+    | ContinueStatement
+    | BreakStatement
+)
+type TopLevelDeclaration = EnumDeclaration | VarDeclaration
+
+
+type Expression = IntegerLiteral | Identifier | BinaryExpression
+
+
+class BinaryOperator(Enum):
+    Add = "+"
+    Times = "*"
+
+
+@dataclass
+class BinaryExpression(Node):
+    operator: BinaryOperator
+    exprs: list[Expression]
 
 
 @dataclass
@@ -22,15 +46,10 @@ class IntegerLiteral(Node):
     integer: int
 
 
-# Expression probably needs to be a base or a union
-@dataclass
-class Expression(Node):
-    ...
-
-
-@dataclass
-class Type(Node):
-    name: str
+type Type = Identifier
+# @dataclass
+# class Type(Node):
+#     name: str
 
 
 @dataclass
@@ -65,6 +84,18 @@ class MethodSignature(Node):
     return_type: str | None
 
 
+type Declaration = (
+    FunctionDeclaration
+    | MethodDeclaration
+    | ConstDeclaration
+    | VarDeclaration
+    | EnumDeclaration
+    | StructDeclaration
+    | UnionDeclaration
+    | TraitDeclaration
+)
+
+
 @dataclass
 class FunctionDeclaration(Node):
     signature: FunctionSignature
@@ -81,51 +112,99 @@ class MethodDeclaration(Node):
 
 @dataclass
 class ConstDeclaration(Node):
-    name: str
+    name: Identifier
     type: Type
     initializer: Expression
 
 
 @dataclass
 class VarDeclaration(Node):
-    maybe_mut: tokens.Keyword | None
-    name: str
+    is_mut: bool
+    name: Identifier
     type: Type  # TODO: Using strings here may be bad idea.
     initializer: Expression
 
 
 @dataclass
 class EnumDeclaration(Node):
-    identifier: str
-    members: list[str]
+    identifier: Identifier
+    members: list[Identifier]
 
 
 @dataclass
 class StructDeclaration(Node):
-    name: str
-    generic_params: GenericParamSpec
-    trait_impls: list[
-        str
-    ]  # TODO: Hm, the implemented traits could be generic, so just a string isn't sufficient.
+    name: Identifier
+    # generic_params: GenericParamSpec
+    # trait_impls: list[
+    #     str
+    # ]  # TODO: Hm, the implemented traits could be generic, so just a string isn't sufficient.
     fields: list[Field]
-    methods: list[MethodDeclaration]
-    functions: list[FunctionDeclaration]
+    # methods: list[MethodDeclaration]
+    # functions: list[FunctionDeclaration]
 
 
 @dataclass
 class UnionDeclaration(Node):
     name: str
     members: list[Type]  # TODO: The TODO above applies here too.
-    generic_params: GenericParamSpec
-    trait_impls: list[str]  # TODO: See TODO above.
-    methods: list[MethodDeclaration]
-    functions: list[FunctionDeclaration]
+    # generic_params: GenericParamSpec
+    # trait_impls: list[str]  # TODO: See TODO above.
+    # methods: list[MethodDeclaration]
+    # functions: list[FunctionDeclaration]
 
 
 @dataclass
 class TraitDeclaration(Node):
     name: str
-    bases: list[Identifier]
-    generic_params: list[GenericParamSpec]
-    methods: list[MethodSignature]
+    # bases: list[Identifier]
+    # generic_params: list[GenericParamSpec]
+    # methods: list[MethodSignature]
     functions: list[FunctionSignature]
+
+
+@dataclass
+class WhileLoop(Node):
+    condition: Expression
+    statements: list[Statement]
+
+
+@dataclass
+class ForLoop(Node):
+    target: Identifier
+    iterator: Expression
+    statements: list[Statement]
+
+
+@dataclass
+class IfStatement(Node):
+    if_condition: Expression
+    if_statements: list[Statement]
+    else_statements: list[Statement]
+
+
+@dataclass
+class IsClause(Node):
+    pattern: Type
+    statements: list[Statement]
+
+
+@dataclass
+class WhenStatement(Node):
+    expression: Expression
+    as_target: Identifier | None
+    is_clauses: list[IsClause]
+
+
+@dataclass
+class ReturnStatement(Node):
+    expression: Expression | None
+
+
+@dataclass
+class ContinueStatement(Node):
+    ...
+
+
+@dataclass
+class BreakStatement(Node):
+    ...

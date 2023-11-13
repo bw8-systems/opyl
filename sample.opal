@@ -69,5 +69,6 @@ def parse_token<const kind: TokenKind>() -> ParseResult<ParametricToken<TokenKin
         return UnexpectedToken
     }
 
+    let foo = (x, y) => {}
     return 
 }

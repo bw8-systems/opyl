@@ -1,9 +1,9 @@
 import pytest
 
-from opyl.compile import lex
-from opyl.compile import errors
-from opyl.compile import stream
-from opyl.compile import tokens
+from opyl import lex
+from opyl import errors
+from opyl import positioning
+from opyl import lexemes
 
 
 class TestTakeWhile:
@@ -39,19 +39,19 @@ class TestSimpleInteger:
     @pytest.mark.parametrize(
         ("source", "integer", "stop"),
         (
-            ("5", 5, stream.TextPosition(absolute=1, line=0, column=1)),
-            ("123", 123, stream.TextPosition(absolute=3, line=0, column=3)),
-            ("5 ", 5, stream.TextPosition(absolute=1, line=0, column=1)),
-            ("123 ", 123, stream.TextPosition(absolute=3, line=0, column=3)),
-            ("123 456", 123, stream.TextPosition(absolute=3, line=0, column=3)),
+            ("5", 5, positioning.TextPosition(absolute=1, line=0, column=1)),
+            ("123", 123, positioning.TextPosition(absolute=3, line=0, column=3)),
+            ("5 ", 5, positioning.TextPosition(absolute=1, line=0, column=1)),
+            ("123 ", 123, positioning.TextPosition(absolute=3, line=0, column=3)),
+            ("123 456", 123, positioning.TextPosition(absolute=3, line=0, column=3)),
         ),
     )
-    def test_integer(self, source: str, integer: int, stop: stream.TextPosition):
+    def test_integer(self, source: str, integer: int, stop: positioning.TextPosition):
         tokenizer = lex.Tokenizer(source)
         token = tokenizer.tokenize_integer()
 
         assert token.integer == integer
-        assert token.span.start == stream.TextPosition.default()
+        assert token.span.start == positioning.TextPosition.default()
         assert token.span.stop == stop
 
     @pytest.mark.parametrize(("source"), (" 5", " 123"))
@@ -69,40 +69,19 @@ class TestWhiteSpace:
         with pytest.raises(errors.NoMatch):
             tokenizer.tokenize_whitespace()
 
-    def test_single_newline(self):
-        tokenizer = lex.Tokenizer("\n")
-        token = tokenizer.tokenize_whitespace()
-
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=1, line=1, column=0)
-
-    def test_multiple_newlines(self):
-        tokenizer = lex.Tokenizer("\n\n\n")
-        token = tokenizer.tokenize_whitespace()
-
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=3, line=3, column=0)
-
     def test_single_space(self):
         tokenizer = lex.Tokenizer(" ")
         token = tokenizer.tokenize_whitespace()
 
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=1, line=0, column=1)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=1, line=0, column=1)
 
     def test_spaces_then_newline(self):
         tokenizer = lex.Tokenizer("  \n")
         token = tokenizer.tokenize_whitespace()
 
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=3, line=1, column=0)
-
-    def test_newline_then_spaces(self):
-        tokenizer = lex.Tokenizer("\n  ")
-        token = tokenizer.tokenize_whitespace()
-
-        assert token.span.start == stream.TextPosition(absolute=0, line=0, column=0)
-        assert token.span.stop == stream.TextPosition(absolute=3, line=1, column=2)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=2, line=0, column=2)
 
 
 class TestComment:
@@ -110,55 +89,55 @@ class TestComment:
         token = lex.Tokenizer("#").tokenize_comment()
 
         assert token.comment == ""
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=1, line=0, column=1)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=1, line=0, column=1)
 
     def test_single_space_comment(self):
         token = lex.Tokenizer("# ").tokenize_comment()
 
         assert token.comment == " "
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=2, line=0, column=2)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=2, line=0, column=2)
 
     def test_actual_comment(self):
         token = lex.Tokenizer("# foo").tokenize_comment()
 
         assert token.comment == " foo"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=5, line=0, column=5)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=5, line=0, column=5)
 
     def test_comment_with_newline(self):
         token = lex.Tokenizer("# foo\nbar").tokenize_comment()
 
         assert token.comment == " foo"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=5, line=0, column=5)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=5, line=0, column=5)
 
 
 class TestIdentifierOrKeyword:
     def test_single_char_name(self):
         token = lex.Tokenizer("a").tokenize_identifier_or_keyword()
 
-        assert isinstance(token, tokens.Identifier)
+        assert isinstance(token, lexemes.Identifier)
         assert token.identifier == "a"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=1, line=0, column=1)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=1, line=0, column=1)
 
     def test_multichar_name(self):
         token = lex.Tokenizer("abc").tokenize_identifier_or_keyword()
 
-        assert isinstance(token, tokens.Identifier)
+        assert isinstance(token, lexemes.Identifier)
         assert token.identifier == "abc"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=3, line=0, column=3)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=3, line=0, column=3)
 
     def test_underscore(self):
         token = lex.Tokenizer("_").tokenize_identifier_or_keyword()
 
-        assert isinstance(token, tokens.Identifier)
+        assert isinstance(token, lexemes.Identifier)
         assert token.identifier == "_"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=1, line=0, column=1)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=1, line=0, column=1)
 
     def test_starts_with_number(self):
         tokenizer = lex.Tokenizer("1abc")
@@ -169,20 +148,20 @@ class TestIdentifierOrKeyword:
     def test_letter_then_number(self):
         token = lex.Tokenizer("a1").tokenize_identifier_or_keyword()
 
-        assert isinstance(token, tokens.Identifier)
+        assert isinstance(token, lexemes.Identifier)
         assert token.identifier == "a1"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=2, line=0, column=2)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=2, line=0, column=2)
 
     def test_keyword_not_identifier(self):
         token = lex.Tokenizer("let").tokenize_identifier_or_keyword()
 
-        assert not isinstance(token, tokens.Identifier)
+        assert not isinstance(token, lexemes.Identifier)
 
     def test_keyword(self):
         token = lex.Tokenizer("let").tokenize_identifier_or_keyword()
 
-        assert isinstance(token, tokens.Keyword)
+        assert isinstance(token, lexemes.Keyword)
 
 
 class TestString:
@@ -190,29 +169,29 @@ class TestString:
         token = lex.Tokenizer('""').tokenize_string()
 
         assert token.string == ""
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=2, line=0, column=2)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=2, line=0, column=2)
 
     def test_single_space_string(self):
         token = lex.Tokenizer('" "').tokenize_string()
 
         assert token.string == " "
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=3, line=0, column=3)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=3, line=0, column=3)
 
     def test_single_char_string(self):
         token = lex.Tokenizer('"a"').tokenize_string()
 
         assert token.string == "a"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=3, line=0, column=3)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=3, line=0, column=3)
 
     def test_multichar_string(self):
         token = lex.Tokenizer('"abc def"').tokenize_string()
 
         assert token.string == "abc def"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=9, line=0, column=9)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=9, line=0, column=9)
 
     def test_unbalanced_string(self):
         tokenizer = lex.Tokenizer('"abc')
@@ -229,10 +208,10 @@ class TestChar:
     def test_single_literal(self):
         token = lex.Tokenizer("'a'").tokenize_character()
 
-        assert isinstance(token, tokens.CharacterLiteral)
+        assert isinstance(token, lexemes.CharacterLiteral)
         assert token.char == "a"
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=3, line=0, column=3)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=3, line=0, column=3)
 
 
 class TestTokenizer:
@@ -243,10 +222,10 @@ class TestTokenizer:
 
         token = token_list[0]
 
-        assert isinstance(token, tokens.IntegerLiteral)
+        assert isinstance(token, lexemes.IntegerLiteral)
         assert token.integer == 56
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=2, line=0, column=2)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=2, line=0, column=2)
 
     def test_whitespace(self):
         tokens = lex.tokenize("   ")
@@ -254,19 +233,19 @@ class TestTokenizer:
         assert len(tokens) == 1
         token = tokens[0]
 
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=3, line=0, column=3)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=3, line=0, column=3)
 
     def test_space_then_integer(self):
         tokens_list = lex.tokenize("   56")
 
         assert len(tokens_list) == 2
 
-        assert isinstance(tokens_list[0], tokens.Whitespace)
-        assert isinstance(tokens_list[1], tokens.IntegerLiteral)
+        assert isinstance(tokens_list[0], lexemes.Whitespace)
+        assert isinstance(tokens_list[1], lexemes.IntegerLiteral)
 
-        assert tokens_list[0].span.start == stream.TextPosition.default()
-        assert tokens_list[0].span.stop == stream.TextPosition(
+        assert tokens_list[0].span.start == positioning.TextPosition.default()
+        assert tokens_list[0].span.stop == positioning.TextPosition(
             absolute=3, line=0, column=3
         )
 
@@ -281,40 +260,40 @@ class TestTokenizer:
 
         token = tokens_list[0]
 
-        assert isinstance(token, tokens.IntegerLiteral)
+        assert isinstance(token, lexemes.IntegerLiteral)
         assert token.integer == 56
-        assert token.span.start == stream.TextPosition.default()
-        assert token.span.stop == stream.TextPosition(absolute=2, line=0, column=2)
+        assert token.span.start == positioning.TextPosition.default()
+        assert token.span.stop == positioning.TextPosition(absolute=2, line=0, column=2)
 
     def test_integer_then_integer(self):
         token_list = lex.tokenize("56 78")
 
         assert len(token_list) == 3
-        assert isinstance(token_list[0], tokens.IntegerLiteral)
-        assert isinstance(token_list[1], tokens.Whitespace)
-        assert isinstance(token_list[2], tokens.IntegerLiteral)
+        assert isinstance(token_list[0], lexemes.IntegerLiteral)
+        assert isinstance(token_list[1], lexemes.Whitespace)
+        assert isinstance(token_list[2], lexemes.IntegerLiteral)
 
         assert token_list[0].integer == 56
         assert token_list[2].integer == 78
 
-        assert token_list[0].span.start == stream.TextPosition(
+        assert token_list[0].span.start == positioning.TextPosition(
             absolute=0, line=0, column=0
         )
-        assert token_list[0].span.stop == stream.TextPosition(
+        assert token_list[0].span.stop == positioning.TextPosition(
             absolute=2, line=0, column=2
         )
 
-        assert token_list[1].span.start == stream.TextPosition(
+        assert token_list[1].span.start == positioning.TextPosition(
             absolute=2, line=0, column=2
         )
-        assert token_list[1].span.stop == stream.TextPosition(
+        assert token_list[1].span.stop == positioning.TextPosition(
             absolute=3, line=0, column=3
         )
 
-        assert token_list[2].span.start == stream.TextPosition(
+        assert token_list[2].span.start == positioning.TextPosition(
             absolute=3, line=0, column=3
         )
-        assert token_list[2].span.stop == stream.TextPosition(
+        assert token_list[2].span.stop == positioning.TextPosition(
             absolute=5, line=0, column=5
         )
 
