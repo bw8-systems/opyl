@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from opyl.compile.lexemes import PrimitiveKind
 from .positioning import Span
 
 
@@ -26,14 +27,40 @@ type Expression = IntegerLiteral | Identifier | BinaryExpression
 
 
 class BinaryOperator(Enum):
-    Add = "+"
-    Times = "*"
+    Add = PrimitiveKind.Plus
+    Sub = PrimitiveKind.Hyphen
+    Mul = PrimitiveKind.Asterisk
+    Div = PrimitiveKind.ForwardSlash
+    Pow = PrimitiveKind.Caret
+
+    def precedence(self) -> int:
+        return {
+            BinaryOperator.Add: 1,
+            BinaryOperator.Sub: 1,
+            BinaryOperator.Mul: 2,
+            BinaryOperator.Div: 2,
+            BinaryOperator.Pow: 3,
+        }[self]
+
+    def is_right_associative(self) -> bool:
+        return {
+            BinaryOperator.Add: False,
+            BinaryOperator.Sub: False,
+            BinaryOperator.Mul: False,
+            BinaryOperator.Div: False,
+            BinaryOperator.Pow: True,
+        }[self]
+
+    @classmethod
+    def values(cls) -> set[PrimitiveKind]:
+        return {member.value for member in cls}
 
 
 @dataclass
 class BinaryExpression(Node):
     operator: BinaryOperator
-    exprs: list[Expression]
+    left: Expression
+    right: Expression
 
 
 @dataclass

@@ -37,7 +37,7 @@ class KeywordKind(enum.Enum):
 class PrimitiveKind(enum.Enum):
     Plus = "+"
     Hyphen = "-"
-    Asterisks = "*"
+    Asterisk = "*"
     ForwardSlash = "/"
     Caret = "^"
     Percent = "%"

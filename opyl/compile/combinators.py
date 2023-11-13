@@ -31,9 +31,9 @@ class Combinator[T](ABC):
             )
         return Drop(self.stream, parser=self, separator=Keyword(self.stream, kind))
 
-    def consume_then[U](
-        self, kind: lexemes.PrimitiveKind, parser: "Combinator[U]"
-    ) -> "Combinator[U]":
+    def consume_then[
+        U
+    ](self, kind: lexemes.PrimitiveKind, parser: "Combinator[U]") -> "Combinator[U]":
         return DropThen(
             self.stream, parser=parser, separator=Primitive(self.stream, kind)
         )
@@ -47,7 +47,9 @@ class Combinator[T](ABC):
     def primitive(self, kind: lexemes.PrimitiveKind) -> "Combinator[lexemes.Primitive]":
         return Primitive(self.stream, kind)
 
-    def between[Start, Stop, InBetween](
+    def between[
+        Start, Stop, InBetween
+    ](
         self, start: Parser[Start], stop: Parser[Stop], between: Parser[InBetween]
     ) -> "Combinator[InBetween]":
         return Between(stream=self.stream, start=start, stop=stop, parser=between)
