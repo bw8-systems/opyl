@@ -1,5 +1,3 @@
-import typing as t
-
 from compile import lex
 from compile import nodes
 from compile import lexemes
@@ -34,8 +32,8 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
     def primitive(self, kind: lexemes.PrimitiveKind) -> comb.PrimitiveTerminal:
         return comb.PrimitiveTerminal(self.tokens, kind)
 
-    def many[T](self, parser: t.Callable[[], T]) -> comb.Repeat[T]:
-        return comb.Repeat(self.tokens, comb.Lift(self.tokens, parser))
+    def integer(self) -> comb.IntegerLiteralTerminal:
+        return comb.IntegerLiteralTerminal(self.tokens)
 
     def decl(self) -> nodes.Declaration:
         return (
@@ -81,6 +79,8 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         ).parse()
 
         ((((keyword, maybe_mut), ident), tipe), initializer), newline = parsed
+        print(self.tokens.stack.index)
+        print(self.tokens.stream[self.tokens.stack.index])
 
         return nodes.VarDeclaration(
             span=keyword.span + newline.span,
@@ -158,15 +158,28 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             & self.identifier() >> PK.Equal
             & self.type
             & self.many(self.primitive(PK.Pipe).consume_before(self.type))
+            & self.maybe(
+                self.primitive(PK.LeftBrace).consume_before(
+                    self.many(
+                        self.maybe(
+                            self.many(self.primitive(PK.NewLine))
+                        ).consume_before(self.function_decl)
+                    )
+                )
+                >> self.primitive(PK.RightBrace)
+            )
             & PK.NewLine
         ).parse()
 
-        (((keyword, ident), tipe), tipes), newline = parsed
+        ((((keyword, ident), tipe), tipes), maybe_functions), newline = parsed
+
+        functions = [] if maybe_functions is None else maybe_functions
 
         return nodes.UnionDeclaration(
             span=keyword.span + newline.span,
             name=ident,
             members=[tipe, *tipes],
+            functions=functions,
         )
 
     def trait_decl(self) -> nodes.TraitDeclaration:
@@ -189,16 +202,16 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         )
 
     def function_decl(self) -> nodes.FunctionDeclaration:
-        # (signature, statements), newline = (
-        #     self.signature
-        #     & self.primitive(PK.LeftBrace).consume_before(self.many(self.statement))
-        #     >> PK.RightBrace
-        #     & PK.NewLine
-        # ).parse()
-
         parsed = (
-            self.lift(self.signature) >> PK.LeftBrace
-            & self.many(self.statement) >> PK.RightBrace
+            self.lift(self.signature)
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            >> PK.LeftBrace
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            & self.many(
+                self.lift(self.statement)
+                >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            )
+            >> PK.RightBrace
             & PK.NewLine
         ).parse()
 
@@ -220,7 +233,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             type=tipe,
         )
 
-    def type(self) -> nodes.Identifier:
+    def type(self) -> nodes.Type:
         return self.identifier().parse()
 
     def signature(self) -> nodes.FunctionSignature:
@@ -286,10 +299,11 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             | self.return_statement
             | self.continue_statement
             | self.break_statement
+            | self.expression
         ).parse()
 
     def expression(self) -> nodes.Expression:
-        return self.identifier().parse()
+        return (self.identifier() | self.integer()).parse()
 
     def generic_specification(self) -> nodes.GenericParamSpec:
         ...
@@ -297,19 +311,50 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
     def if_statement(self) -> nodes.IfStatement:
         parsed = (
             self.keyword(KK.If)
-            & self.expression
-            & self.primitive(PK.LeftBrace).consume_before(self.many(self.statement))
+            & self.lift(self.expression)
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            >> self.primitive(PK.LeftBrace)
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            & self.many(
+                self.maybe(self.primitive(PK.NewLine)).consume_before(self.statement)
+            )
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
             >> PK.RightBrace
+            & self.maybe(
+                self.maybe(self.many(self.primitive(PK.NewLine))).consume_before(
+                    self.keyword(KK.Else).consume_before(
+                        self.maybe(
+                            self.many(self.primitive(PK.NewLine))
+                        ).consume_before(
+                            self.primitive(PK.LeftBrace).consume_before(
+                                self.maybe(
+                                    self.many(
+                                        self.primitive(PK.NewLine).consume_before(
+                                            self.statement
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                    >> PK.RightBrace
+                )
+            )
             & PK.NewLine
         ).parse()
 
-        ((keyword, expression), statements), newline = parsed
+        (((keyword, condition), if_statements), maybe_else_statements), newline = parsed
+
+        if maybe_else_statements is None:
+            else_statements = []
+        else:
+            else_statements = maybe_else_statements
 
         return nodes.IfStatement(
             span=keyword.span + newline.span,
-            if_condition=expression,
-            if_statements=statements,
-            else_statements=[],
+            if_condition=condition,
+            if_statements=if_statements,
+            else_statements=else_statements,
         )
 
     def while_statement(self) -> nodes.WhileLoop:

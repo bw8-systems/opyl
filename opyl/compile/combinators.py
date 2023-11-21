@@ -182,6 +182,9 @@ class Parser[T](ABC):
     def maybe[U](self, parser: t.Callable[[], U]) -> "Or[U, None]":
         return Lift(self.tokens, parser) | self.empty()
 
+    def many[U](self, parser: t.Callable[[], U]) -> "Repeat[U]":
+        return Repeat(self.tokens, Lift(self.tokens, parser))
+
 
 @dataclass
 class Lift[T](Parser[T]):

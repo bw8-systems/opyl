@@ -74,18 +74,33 @@ enum Monty {
 
 union Enums = Color | Monty
 
-def main(foo: Foo, bar: mut Bar, anon baz: Baz) {}
-
 def empty() {}
 
 trait Iterable {
     def next()
 }
+
+union WithMethods = Range | u8 {
+    def hella() {}
+}
+
+def main(foo: Foo, bar: mut Bar, anon baz: Baz) {
+    let local: u32 = a
+
+    if expr {
+        other
+    } else {
+        another
+    }
+
+    return 0
+}
+
 """
 parser = parse.OpalParser(test_source)
 
-pprint(parser.parse())
-
+parsed = parser.parse()
+pprint(parsed)
 # higher_order = parser.keyword(Keywords.Let) >> parser.whitespace() & parser.maybe(
 #     parser.keyword(Keywords.Mut)
 # )

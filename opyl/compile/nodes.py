@@ -26,6 +26,7 @@ type Statement = (
     | ReturnStatement
     | ContinueStatement
     | BreakStatement
+    | Expression
 )
 
 type Expression = (
@@ -271,7 +272,7 @@ class UnionDeclaration(Node):
     # generic_params: GenericParamSpec
     # trait_impls: list[str]  # TODO: See TODO above.
     # methods: list[MethodDeclaration]
-    # functions: list[FunctionDeclaration]
+    functions: list[FunctionDeclaration]
 
     @t.override
     def accept(self, visitor: "Visitor") -> None:
