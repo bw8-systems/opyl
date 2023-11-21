@@ -23,7 +23,7 @@ struct Span {
 """
 
 tokens = lex.tokenize(source)
-decls = parse.parse(tokens)
+decls = parser.parse(tokens)
 
 print(f"Tokens: {len(tokens)}")
 print(f"Decls: {len(decls)}")

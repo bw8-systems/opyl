@@ -2,7 +2,7 @@ import typing as t
 import contextlib
 import dataclasses
 
-from . import errors
+from compile import errors
 
 
 @dataclasses.dataclass
@@ -137,4 +137,5 @@ class Stream[T]:
         return consumed
 
     def advance(self) -> None:
+        # raise Exception()
         self.advance_by(1)

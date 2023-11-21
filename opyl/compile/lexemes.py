@@ -2,7 +2,7 @@ import enum
 import dataclasses
 
 
-from .positioning import Span
+from compile.positioning import Span
 
 
 class KeywordKind(enum.Enum):
@@ -14,6 +14,7 @@ class KeywordKind(enum.Enum):
     Let = "let"
     Const = "const"
     Def = "def"
+    Meth = "meth"
 
     While = "while"
     For = "for"
@@ -28,10 +29,14 @@ class KeywordKind(enum.Enum):
     Break = "break"
     Continue = "Continue"
 
-    U8 = "u8"
     Char = "char"
     Mut = "mut"
     Anon = "anon"
+
+
+class BuiltInTypes(enum.Enum):
+    U8 = "u8"
+    U32 = "u32"
 
 
 class PrimitiveKind(enum.Enum):

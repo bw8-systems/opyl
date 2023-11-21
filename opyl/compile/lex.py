@@ -1,8 +1,8 @@
 import typing as t
 
-from . import lexemes
-from .positioning import TextStream, Span
-from . import errors
+from compile import lexemes
+from compile.positioning import TextStream, Span
+from compile import errors
 
 type Predicate[T] = t.Callable[[T], bool]
 type Scanner = t.Callable[[], lexemes.Token]

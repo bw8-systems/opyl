@@ -1,4 +1,5 @@
-from compile import lex
+from pprint import pprint
+
 from compile import parse
 
 
@@ -52,5 +53,43 @@ fn main() {
 }
 """
 
-var_decl = " "
-parse.parse(lex.tokenize(var_decl))
+test_source = """
+let mut foo: Foo = bar
+const FOO: Foo = baz
+
+struct Range {
+    start: u8
+    stop: u8
+}
+
+enum Color {
+    Red, Green, Blue
+}
+
+enum Monty {
+    Foo,
+    Bar,
+    Baz,
+}
+
+union Enums = Color | Monty
+
+def main(foo: Foo, bar: mut Bar, anon baz: Baz) {}
+
+def empty() {}
+
+trait Iterable {
+    def next()
+}
+"""
+parser = parse.OpalParser(test_source)
+
+pprint(parser.parse())
+
+# higher_order = parser.keyword(Keywords.Let) >> parser.whitespace() & parser.maybe(
+#     parser.keyword(Keywords.Mut)
+# )
+
+# pprint(parser.parse())
+# for item in higher_order.parse()
+#     pprint(item)

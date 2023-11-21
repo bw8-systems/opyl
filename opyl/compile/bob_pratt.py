@@ -2,8 +2,8 @@ import typing as t
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from opyl import nodes
-from opyl import lexemes
+from opyl.compile import nodes
+from opyl.compile import lexemes
 from opyl.compile.positioning import Stream, Span
 
 
@@ -179,5 +179,5 @@ tokens = [
 parser = Parser(tokens=Stream(tokens))
 expr = parser.expression()
 
-pprint(expr)
-print(type(expr))
+pprint(parser.expression())
+pprint(parser.expression())

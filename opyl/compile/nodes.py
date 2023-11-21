@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from enum import Enum
 from abc import ABC, abstractmethod
 
-from opyl.compile.lexemes import PrimitiveKind, Primitive
-from .positioning import Span
+from compile.lexemes import PrimitiveKind, Primitive
+from compile.positioning import Span
 
 
 @dataclass
@@ -150,7 +150,13 @@ class Field(Node):
 @dataclass
 class ParamSpec(Node):
     is_anon: bool
-    field: Field
+    ident: Identifier
+    is_mut: bool
+    type: Type
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.param_spec(self)
 
 
 @dataclass
@@ -162,7 +168,11 @@ class GenericParamSpec(Node):
 class FunctionSignature(Node):
     name: Identifier
     params: list[ParamSpec]
-    return_type: str | None  # TODO: from a type perspective, all functions have a return type...
+    return_type: Identifier | None  # TODO: from a type perspective, all functions have a return type...
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.signature(self)
 
 
 @dataclass
@@ -425,4 +435,12 @@ class Visitor(ABC):
 
     @abstractmethod
     def integer(self, node: IntegerLiteral) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def signature(self, node: FunctionSignature) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def param_spec(self, node: ParamSpec) -> None:
         raise NotImplementedError()

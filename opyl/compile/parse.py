@@ -1,21 +1,29 @@
 import typing as t
 
-from . import lex
-from . import nodes
-from . import lexemes
-from .positioning import Stream
-from .lexemes import KeywordKind as KK
-from .lexemes import PrimitiveKind as PK
+from compile import lex
+from compile import nodes
+from compile import lexemes
+from compile.positioning import Stream
+from compile.lexemes import KeywordKind as KK
+from compile.lexemes import PrimitiveKind as PK
 
-from . import combinators as comb
+from compile import combinators as comb
 
 
 class OpalParser(comb.Parser[list[nodes.Declaration]]):
     def __init__(self, source: str):
-        super().__init__(tokens=Stream(lex.tokenize(source)))
+        tokens = list(
+            filter(
+                lambda token: not isinstance(token, lexemes.Whitespace),
+                lex.tokenize(source),
+            )
+        )
+        super().__init__(tokens=Stream(tokens))
 
     def parse(self) -> list[nodes.Declaration]:
-        ...
+        return self.many(
+            self.many(self.primitive(PK.NewLine)).consume_before(self.decl)
+        ).parse()
 
     def keyword(self, kw: lexemes.KeywordKind) -> comb.KeywordTerminal:
         return comb.KeywordTerminal(self.tokens, kw)
@@ -30,21 +38,23 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         return comb.Repeat(self.tokens, comb.Lift(self.tokens, parser))
 
     def decl(self) -> nodes.Declaration:
-        return self.choice(
-            self.const_decl,
-            self.var_decl,
-            self.enum_decl,
-            self.struct_decl,
-            self.union_decl,
-            self.trait_decl,
-            self.function_decl,
+        return (
+            self.lift(self.const_decl)
+            | self.var_decl
+            | self.enum_decl
+            | self.struct_decl
+            | self.union_decl
+            | self.trait_decl
+            | self.function_decl
         ).parse()
 
     def const_decl(self) -> nodes.ConstDeclaration:
+        # const NAME: Type = initializer\n
+
         parsed = (
             self.keyword(KK.Const)
-            & self.identifier() >> PK.Colon
-            & self.lift(self.type) >> PK.Equal
+            & self.identifier() >> self.primitive(PK.Colon)
+            & self.lift(self.type) >> self.primitive(PK.Equal)
             & self.expression
             & PK.NewLine
         ).parse()
@@ -59,19 +69,18 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         )
 
     def var_decl(self) -> nodes.VarDeclaration:
+        # let [mut]? Name: Type = initializer\n
+
         parsed = (
-            KK.Let
-            & (self.keyword(KK.Mut) | self.empty())
-            & self.identifier() >> PK.Colon
-            & self.lift(self.type) >> PK.Equal
-            & self.expression
-            & PK.NewLine
+            self.keyword(KK.Let)
+            & self.maybe(self.keyword(KK.Mut))
+            & self.identifier() >> self.primitive(PK.Colon)
+            & self.lift(self.type) >> self.primitive(PK.Equal)
+            & self.lift(self.expression)
+            & self.primitive(PK.NewLine)
         ).parse()
 
-        (
-            (((((keyword, maybe_mut), ident), tipe), initializer)),
-            newline,
-        ) = parsed
+        ((((keyword, maybe_mut), ident), tipe), initializer), newline = parsed
 
         return nodes.VarDeclaration(
             span=keyword.span + newline.span,
@@ -82,32 +91,52 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         )
 
     def struct_decl(self) -> nodes.StructDeclaration:
+        # struct Name {
+        #     [Field]\n*
+        # }\n
+
         parsed = (
-            KK.Struct
+            self.keyword(KK.Struct)
             & self.identifier()
-            & self.primitive(PK.LeftBrace).consume_before(self.many(self.field))
+            >> PK.LeftBrace
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            & self.field
+            & self.many(self.primitive(PK.NewLine).consume_before(self.field))
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
             >> PK.RightBrace
             & PK.NewLine
         ).parse()
 
-        ((keyword, ident), fields), newline = parsed
+        (((keyword, ident), field), fields), newline = parsed
 
         return nodes.StructDeclaration(
             span=keyword.span + newline.span,
             name=ident,
-            fields=fields,
+            fields=[field, *fields],
             functions=[],  # TODO: parse functions AND methods
         )
 
     def enum_decl(self) -> nodes.EnumDeclaration:
+        # enum Name {
+        #     [Identifier],\n*
+        # }\n
+
         parsed = (
             KK.Enum
             & self.identifier()
-            & self.primitive(PK.LeftBrace).consume_before(self.identifier())
-            & comb.Repeat(
-                tokens=self.tokens,
-                parser=self.primitive(PK.Comma).consume_before(self.identifier()),
+            >> PK.LeftBrace
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            & self.identifier()
+            & self.many(
+                self.primitive(PK.Comma)
+                .consume_before(self.maybe(self.many(self.primitive(PK.NewLine))))
+                .consume_before(
+                    self.identifier()
+                    >> self.maybe(self.many(self.primitive(PK.NewLine)))
+                )
             )
+            >> self.maybe(self.primitive(PK.Comma))
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
             >> PK.RightBrace
             & PK.NewLine
         ).parse()
@@ -144,15 +173,14 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         parsed = (
             KK.Trait
             & self.identifier()
-            & (
-                self.primitive(PK.LeftBrace).consume_before(
-                    self.many(self.signature) >> PK.NewLine
-                )
-                & PK.NewLine
-            )
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            >> PK.LeftBrace
+            >> self.maybe(self.many(self.primitive(PK.NewLine)))
+            & self.many(self.lift(self.signature) >> PK.NewLine) >> PK.RightBrace
+            & PK.NewLine
         ).parse()
 
-        (keyword, ident), (signatures, newline) = parsed
+        ((keyword, ident), signatures), newline = parsed
 
         return nodes.TraitDeclaration(
             span=keyword.span + newline.span,
@@ -161,12 +189,20 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         )
 
     def function_decl(self) -> nodes.FunctionDeclaration:
-        (signature, statements), newline = (
-            self.signature
-            & self.primitive(PK.LeftBrace).consume_before(self.many(self.statement))
-            >> PK.RightBrace
+        # (signature, statements), newline = (
+        #     self.signature
+        #     & self.primitive(PK.LeftBrace).consume_before(self.many(self.statement))
+        #     >> PK.RightBrace
+        #     & PK.NewLine
+        # ).parse()
+
+        parsed = (
+            self.lift(self.signature) >> PK.LeftBrace
+            & self.many(self.statement) >> PK.RightBrace
             & PK.NewLine
         ).parse()
+
+        (signature, statements), newline = parsed
 
         return nodes.FunctionDeclaration(
             span=signature.span + newline.span,
@@ -176,12 +212,10 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         )
 
     def field(self) -> nodes.Field:
-        (ident, tipe), newline = (
-            self.identifier() >> PK.Colon & self.type & PK.NewLine
-        ).parse()
+        ident, tipe = (self.identifier() >> PK.Colon & self.type).parse()
 
         return nodes.Field(
-            span=ident.span + newline.span,
+            span=ident.span + tipe.span,
             name=ident,
             type=tipe,
         )
@@ -190,19 +224,68 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         return self.identifier().parse()
 
     def signature(self) -> nodes.FunctionSignature:
-        ...
+        parsed = (
+            self.keyword(KK.Def)
+            & self.identifier() >> PK.LeftParenthesis
+            & self.maybe(self.param_spec)
+            & self.many(self.primitive(PK.Comma).consume_before(self.param_spec))
+            & PK.RightParenthesis
+            & self.maybe(self.primitive(PK.RightAngle).consume_before(self.type))
+        ).parse()
+
+        (
+            ((((keyword, ident), maybe_param), params), right_paren),
+            maybe_return_type,
+        ) = parsed
+
+        if maybe_return_type is not None:
+            return_type = maybe_return_type
+            end = maybe_return_type
+        else:
+            return_type = None
+            end = right_paren
+
+        if maybe_param is not None:
+            params.insert(0, maybe_param)
+
+        return nodes.FunctionSignature(
+            span=keyword.span + end.span,
+            name=ident,
+            params=params,
+            return_type=return_type,
+        )
+
+    def param_spec(self) -> nodes.ParamSpec:
+        parsed = (
+            self.maybe(self.keyword(KK.Anon))
+            & self.identifier() >> PK.Colon
+            & self.maybe(self.keyword(KK.Mut))
+            & self.type
+        ).parse()
+
+        ((maybe_anon, ident), maybe_mut), tipe = parsed
+
+        start = ident if maybe_anon is None else maybe_anon
+
+        return nodes.ParamSpec(
+            span=start.span + tipe.span,
+            is_anon=maybe_anon is not None,
+            ident=ident,
+            is_mut=maybe_mut is not None,
+            type=tipe,
+        )
 
     def statement(self) -> nodes.Statement:
-        return self.choice(
-            self.const_decl,
-            self.var_decl,
-            self.for_statement,
-            self.while_statement,
-            self.when_statement,
-            self.if_statement,
-            self.return_statement,
-            self.continue_statement,
-            self.break_statement,
+        return (
+            self.lift(self.const_decl)
+            | self.var_decl
+            | self.for_statement
+            | self.while_statement
+            | self.when_statement
+            | self.if_statement
+            | self.return_statement
+            | self.continue_statement
+            | self.break_statement
         ).parse()
 
     def expression(self) -> nodes.Expression:

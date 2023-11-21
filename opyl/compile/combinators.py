@@ -2,57 +2,10 @@ import typing as t
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
-from opyl.compile import lexemes
-from opyl.compile import nodes
-from opyl.compile.positioning import Stream
-
-
-class ParseException(Exception):
-    ...
-
-
-class UnexpectedEOF(ParseException):
-    @classmethod
-    def instead_of_primitive(cls, kind: "lexemes.PrimitiveKind") -> t.Self:
-        return cls(
-            f"Token stream was exhausted while looking for primitive token '{kind.value}'"
-        )
-
-    @classmethod
-    def instead_of_integer(cls) -> t.Self:
-        return cls("Token stream was exhausted while looking for integer literal.")
-
-
-class UnexpectedToken(ParseException):
-    @classmethod
-    def instead_of_primitive(
-        cls, got: "lexemes.Token", instead_of: "lexemes.PrimitiveKind"
-    ) -> t.Self:
-        return cls(
-            f"Got token {got} while looking for primitive token '{instead_of.value}'"
-        )
-
-    @classmethod
-    def wrong_primitive(
-        cls, got: "lexemes.PrimitiveKind", expected: "lexemes.PrimitiveKind"
-    ) -> t.Self:
-        return cls(
-            f"Got primitive token '{got.value}' while looking for primitive token '{expected.value}'"
-        )
-
-    @classmethod
-    def instead_of_integer(cls, got: "lexemes.Token") -> t.Self:
-        return cls(f"Got token {got} while looking for integer literal.")
-
-    @classmethod
-    def instead_of_identifier(cls, got: "lexemes.Token") -> t.Self:
-        return cls(f"Got token {got} while looking for identifier token.")
-
-    @classmethod
-    def instead_of_keyword(
-        cls, got: "lexemes.Token", expected: "lexemes.KeywordKind"
-    ) -> t.Self:
-        return cls(f"Got token {got} while looking for keyword '{expected}'")
+from compile import lexemes
+from compile import nodes
+from compile import errors
+from compile.positioning import Stream
 
 
 @dataclass
@@ -66,7 +19,7 @@ class Parser[T](ABC):
     def __call__(self) -> T:
         return self.parse()
 
-    def __or__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Parser[T | U]":
+    def __or__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Or[T, U]":
         match other:
             case Parser():
                 return Or(self.tokens, self, other)
@@ -76,9 +29,9 @@ class Parser[T](ABC):
     def __ror__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Parser[T | U]":
         match other:
             case Parser():
-                return Or(self.tokens, other, self)
+                return Or(self.tokens, self, other)
             case _:
-                return Or(self.tokens, Lift(self.tokens, other), self)
+                return Or(self.tokens, self, Lift(self.tokens, other))
 
     @t.overload
     def __and__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Then[T, U]":
@@ -172,6 +125,21 @@ class Parser[T](ABC):
         return self.consume(second)
 
     @t.overload
+    def __rrshift__[U](self, second: "Parser[U]") -> "Consume[T, U]":
+        ...
+
+    @t.overload
+    def __rrshift__(
+        self, second: lexemes.PrimitiveKind
+    ) -> "Consume[T, lexemes.Primitive]":
+        ...
+
+    def __rrshift__[U](
+        self, second: "Parser[U] | lexemes.PrimitiveKind"
+    ) -> "Consume[T, U] | Consume[T, lexemes.Primitive]":
+        return self.consume(second)
+
+    @t.overload
     def consume_before[U](
         self, second: "Parser[U] | t.Callable[[], U]"
     ) -> "ConsumeBefore[T, U]":
@@ -184,7 +152,7 @@ class Parser[T](ABC):
         ...
 
     def consume_before[U](
-        self, second: "Parser[U] | t.Callable[[], U] | lexemes.PrimitiveKind"
+        self, second: "t.Callable[[], U] | Parser[U] | lexemes.PrimitiveKind"
     ) -> "ConsumeBefore[T, U] | ConsumeBefore[T, lexemes.Primitive]":
         match second:
             case Parser():
@@ -211,30 +179,16 @@ class Parser[T](ABC):
     def empty(self) -> "Empty":
         return Empty(self.tokens)
 
-    def choice[U](self, *parsers: t.Callable[[], U]) -> "Choice[U]":
-        return Choice(tokens=self.tokens, choices=parsers)
+    def maybe[U](self, parser: t.Callable[[], U]) -> "Or[U, None]":
+        return Lift(self.tokens, parser) | self.empty()
 
 
 @dataclass
 class Lift[T](Parser[T]):
-    parser: t.Callable[[], T]  # TODO: Should be ParseResult[T]?
+    parser: t.Callable[[], T]
 
     def parse(self) -> T:
         return self.parser()
-
-
-@dataclass
-class Choice[T](Parser[T]):
-    choices: tuple[t.Callable[[], T], ...]
-
-    def parse(self) -> T:
-        for choice in self.choices:
-            try:
-                return Lift(self.tokens, choice).parse()
-            except ParseException:
-                ...
-
-        raise UnexpectedToken("Did not find expected token from choices.")
 
 
 @dataclass
@@ -244,8 +198,14 @@ class Or[T, U](Parser[T | U]):
 
     def parse(self) -> T | U:
         try:
+            # print(self.tokens.stack.index)
             return self.this.parse()
-        except ParseException:
+        except errors.ParseException:
+            try:
+                return self.that.parse()
+            except errors.ParseException:
+                ...
+
             return self.that.parse()
 
 
@@ -306,7 +266,7 @@ class Repeat[T](Parser[list[T]]):
         while True:
             try:
                 item = self.parser.parse()
-            except ParseException:
+            except errors.ParseException:
                 if len(items) >= self.validated_lower:
                     return items
                 raise
@@ -368,13 +328,13 @@ class PrimitiveTerminal(Parser[lexemes.Primitive]):
     def parse(self) -> lexemes.Primitive:
         peeked = self.tokens.peek()
         if peeked is None:
-            raise UnexpectedEOF.instead_of_primitive(self.terminal)
+            raise errors.UnexpectedEOF.instead_of_primitive(self.terminal)
 
-        if not isinstance(peeked, lexemes.Primitive):
-            raise UnexpectedToken.instead_of_primitive(peeked, self.terminal)
+        if not (isinstance(peeked, lexemes.Primitive) and peeked.kind is self.terminal):
+            raise errors.UnexpectedToken.instead_of_primitive(peeked, self.terminal)
 
         if not peeked.kind == self.terminal:
-            raise UnexpectedToken.wrong_primitive(
+            raise errors.UnexpectedToken.wrong_primitive(
                 got=peeked.kind, expected=self.terminal
             )
 
@@ -387,9 +347,11 @@ class IdentifierTerminal(Parser[nodes.Identifier]):
         peeked = self.tokens.peek()
 
         if peeked is None:
-            raise UnexpectedEOF("Unexpected EOF while looking for identifier token.")
+            raise errors.UnexpectedEOF(
+                "Unexpected EOF while looking for identifier token."
+            )
         if not isinstance(peeked, lexemes.Identifier):
-            raise UnexpectedToken.instead_of_identifier(peeked)
+            raise errors.UnexpectedToken.instead_of_identifier(peeked)
 
         self.tokens.advance()
         return nodes.Identifier(span=peeked.span, name=peeked.identifier)
@@ -403,11 +365,11 @@ class KeywordTerminal(Parser[lexemes.Keyword]):
         peeked = self.tokens.peek()
 
         if peeked is None:
-            raise UnexpectedEOF(
+            raise errors.UnexpectedEOF(
                 f"Unexpected EOF while looking for keyword {self.kind}."
             )
-        if not isinstance(peeked, lexemes.Keyword):
-            raise UnexpectedToken.instead_of_keyword(peeked, self.kind)
+        if not (isinstance(peeked, lexemes.Keyword) and peeked.kind is self.kind):
+            raise errors.UnexpectedToken.instead_of_keyword(peeked, self.kind)
 
         self.tokens.advance()
         return peeked
@@ -419,9 +381,9 @@ class IntegerLiteralTerminal(Parser[nodes.IntegerLiteral]):
         peeked = self.tokens.peek()
 
         if peeked is None:
-            raise UnexpectedEOF.instead_of_integer()
+            raise errors.UnexpectedEOF.instead_of_integer()
         if not isinstance(peeked, lexemes.IntegerLiteral):
-            raise UnexpectedToken.instead_of_integer(peeked)
+            raise errors.UnexpectedToken.instead_of_integer(peeked)
 
         self.tokens.advance()
         return nodes.IntegerLiteral(span=peeked.span, integer=peeked.integer)
