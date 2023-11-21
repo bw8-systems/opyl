@@ -130,6 +130,10 @@ class Identifier(Node):
 class IntegerLiteral(Node):
     integer: int
 
+    @t.override
+    def accept(self, visitor: "Visitor"):
+        visitor.integer(self)
+
 
 type Type = Identifier
 
@@ -417,4 +421,8 @@ class Visitor(ABC):
 
     @abstractmethod
     def is_clause(self, node: IsClause) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def integer(self, node: IntegerLiteral) -> None:
         raise NotImplementedError()

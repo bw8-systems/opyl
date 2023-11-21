@@ -3,23 +3,8 @@ from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
 from opyl.compile import lexemes
+from opyl.compile import nodes
 from opyl.compile.positioning import Stream
-
-
-@dataclass
-class Err[E: Exception]:
-    kind: E
-
-    def unwrap(self) -> t.Any:
-        raise self.kind
-
-
-@dataclass
-class Ok[T]:
-    item: T
-
-    def unwrap(self) -> T:
-        return self.item
 
 
 class ParseException(Exception):
@@ -81,20 +66,141 @@ class Parser[T](ABC):
     def __call__(self) -> T:
         return self.parse()
 
-    def __or__[U](self, other: "Parser[U]") -> "Parser[T | U]":
-        return Or(self.tokens, self, other)
+    def __or__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Parser[T | U]":
+        match other:
+            case Parser():
+                return Or(self.tokens, self, other)
+            case _:
+                return Or(self.tokens, self, Lift(self.tokens, other))
 
-    def __and__[U](self, other: "Parser[U]") -> "Then[T, U]":
-        return self.then(other)
+    def __ror__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Parser[T | U]":
+        match other:
+            case Parser():
+                return Or(self.tokens, other, self)
+            case _:
+                return Or(self.tokens, Lift(self.tokens, other), self)
+
+    @t.overload
+    def __and__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Then[T, U]":
+        ...
+
+    @t.overload
+    def __and__(self, other: lexemes.PrimitiveKind) -> "Then[T, lexemes.Primitive]":
+        ...
+
+    @t.overload
+    def __and__(self, other: lexemes.KeywordKind) -> "Then[T, lexemes.Keyword]":
+        ...
+
+    def __and__[U](
+        self,
+        other: "Parser[U] | t.Callable[[], U] | lexemes.PrimitiveKind | lexemes.KeywordKind",
+    ) -> "Then[T, U] | Then[T, lexemes.Primitive] | Then[T, lexemes.Keyword]":
+        match other:
+            case Parser():
+                return self.then(other)
+            case lexemes.PrimitiveKind():
+                return self.then(PrimitiveTerminal(self.tokens, other))
+            case lexemes.KeywordKind():
+                return self.then(KeywordTerminal(self.tokens, other))
+            case _:
+                return self.then(Lift(self.tokens, other))
+
+    @t.overload
+    def __rand__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Then[U, T]":
+        ...
+
+    @t.overload
+    def __rand__(self, other: lexemes.PrimitiveKind) -> "Then[lexemes.Primitive, T]":
+        ...
+
+    @t.overload
+    def __rand__(self, other: lexemes.KeywordKind) -> "Then[lexemes.Keyword, T]":
+        ...
+
+    def __rand__[U](
+        self,
+        other: "Parser[U] | t.Callable[[], U] | lexemes.PrimitiveKind | lexemes.KeywordKind",
+    ) -> "Then[U, T] | Then[lexemes.Primitive, T] | Then[lexemes.Keyword, T]":
+        match other:
+            case Parser():
+                return other.then(self)
+            case lexemes.PrimitiveKind():
+                return PrimitiveTerminal(self.tokens, other).then(self)
+            case lexemes.KeywordKind():
+                return KeywordTerminal(self.tokens, other).then(self)
+            case _:
+                return Lift(self.tokens, other).then(self)
 
     def then[U](self, second: "Parser[U]") -> "Then[T, U]":
         return Then(tokens=self.tokens, first=self, second=second)
 
+    @t.overload
     def consume[U](self, second: "Parser[U]") -> "Consume[T, U]":
-        return Consume(tokens=self.tokens, first=self, second=second)
+        ...
 
-    def consume_before[U](self, second: "Parser[U]") -> "ConsumeBefore[T, U]":
-        return ConsumeBefore(tokens=self.tokens, first=self, second=second)
+    @t.overload
+    def consume(self, second: lexemes.PrimitiveKind) -> "Consume[T, lexemes.Primitive]":
+        ...
+
+    def consume[U](
+        self, second: "Parser[U] | lexemes.PrimitiveKind"
+    ) -> "Consume[T, U] | Consume[T, lexemes.Primitive]":
+        match second:
+            case Parser():
+                return Consume(tokens=self.tokens, first=self, second=second)
+            case _:
+                return Consume(
+                    tokens=self.tokens,
+                    first=self,
+                    second=PrimitiveTerminal(self.tokens, second),
+                )
+
+    @t.overload
+    def __rshift__[U](self, second: "Parser[U]") -> "Consume[T, U]":
+        ...
+
+    @t.overload
+    def __rshift__(
+        self, second: lexemes.PrimitiveKind
+    ) -> "Consume[T, lexemes.Primitive]":
+        ...
+
+    def __rshift__[U](
+        self, second: "Parser[U] | lexemes.PrimitiveKind"
+    ) -> "Consume[T, U] | Consume[T, lexemes.Primitive]":
+        return self.consume(second)
+
+    @t.overload
+    def consume_before[U](
+        self, second: "Parser[U] | t.Callable[[], U]"
+    ) -> "ConsumeBefore[T, U]":
+        ...
+
+    @t.overload
+    def consume_before(
+        self, second: lexemes.PrimitiveKind
+    ) -> "ConsumeBefore[T, lexemes.Primitive]":
+        ...
+
+    def consume_before[U](
+        self, second: "Parser[U] | t.Callable[[], U] | lexemes.PrimitiveKind"
+    ) -> "ConsumeBefore[T, U] | ConsumeBefore[T, lexemes.Primitive]":
+        match second:
+            case Parser():
+                return ConsumeBefore(tokens=self.tokens, first=self, second=second)
+            case lexemes.PrimitiveKind():
+                return ConsumeBefore(
+                    tokens=self.tokens,
+                    first=self,
+                    second=PrimitiveTerminal(self.tokens, second),
+                )
+            case _:
+                return ConsumeBefore(
+                    tokens=self.tokens,
+                    first=self,
+                    second=Lift(tokens=self.tokens, parser=second),
+                )
 
     def repeat(self, lower: int | None = None, upper: int | None = None) -> "Repeat[T]":
         return Repeat(tokens=self.tokens, parser=self, lower=lower, upper=upper)
@@ -104,6 +210,9 @@ class Parser[T](ABC):
 
     def empty(self) -> "Empty":
         return Empty(self.tokens)
+
+    def choice[U](self, *parsers: t.Callable[[], U]) -> "Choice[U]":
+        return Choice(tokens=self.tokens, choices=parsers)
 
 
 @dataclass
@@ -116,12 +225,12 @@ class Lift[T](Parser[T]):
 
 @dataclass
 class Choice[T](Parser[T]):
-    choices: tuple[Parser[T], ...]
+    choices: tuple[t.Callable[[], T], ...]
 
     def parse(self) -> T:
         for choice in self.choices:
             try:
-                return choice.parse()
+                return Lift(self.tokens, choice).parse()
             except ParseException:
                 ...
 
@@ -273,8 +382,8 @@ class PrimitiveTerminal(Parser[lexemes.Primitive]):
         return peeked
 
 
-class IdentifierTerminal(Parser[lexemes.Identifier]):
-    def parse(self) -> lexemes.Identifier:
+class IdentifierTerminal(Parser[nodes.Identifier]):
+    def parse(self) -> nodes.Identifier:
         peeked = self.tokens.peek()
 
         if peeked is None:
@@ -283,7 +392,7 @@ class IdentifierTerminal(Parser[lexemes.Identifier]):
             raise UnexpectedToken.instead_of_identifier(peeked)
 
         self.tokens.advance()
-        return peeked
+        return nodes.Identifier(span=peeked.span, name=peeked.identifier)
 
 
 @dataclass
@@ -305,8 +414,8 @@ class KeywordTerminal(Parser[lexemes.Keyword]):
 
 
 @dataclass
-class IntegerLiteralTerminal(Parser[lexemes.IntegerLiteral]):
-    def parse(self) -> lexemes.IntegerLiteral:
+class IntegerLiteralTerminal(Parser[nodes.IntegerLiteral]):
+    def parse(self) -> nodes.IntegerLiteral:
         peeked = self.tokens.peek()
 
         if peeked is None:
@@ -315,4 +424,4 @@ class IntegerLiteralTerminal(Parser[lexemes.IntegerLiteral]):
             raise UnexpectedToken.instead_of_integer(peeked)
 
         self.tokens.advance()
-        return peeked
+        return nodes.IntegerLiteral(span=peeked.span, integer=peeked.integer)
