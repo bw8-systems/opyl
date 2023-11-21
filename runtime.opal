@@ -25,13 +25,12 @@ union Primitive(Printable) = (
 
     mem type_index() -> u8 {
         when self {
-            is char { return 0 )
-            is u8   { return 1 )
-            is i8   { return 2 )
-            is u16  { return 3 )
-            is i16  { return 4 )
-            is u32  { return 5 )
-            is i32  { return 6 )
+            is char { return 0 }
+            else { ... }
+        }
+
+        if self is char {
+            ...
         }
     }
 }

@@ -103,7 +103,7 @@ class Stream[T]:
         self.stream = stream
 
     def __len__(self) -> int:
-        return len(self.stream)
+        return len(self.stream[self.stack.index :])
 
     def peek(self) -> T | None:
         try:
@@ -125,3 +125,16 @@ class Stream[T]:
 
         self.increment()
         return peeked
+
+    def remaining(self) -> list[T]:
+        return list(self.stream[self.stack.index :])
+
+    def advance_by(self, count: int) -> list[T]:
+        consumed = list[T]()
+        for _ in range(count):
+            consumed.append(self.next())
+
+        return consumed
+
+    def advance(self) -> None:
+        self.advance_by(1)

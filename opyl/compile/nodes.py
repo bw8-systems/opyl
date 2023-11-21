@@ -1,17 +1,24 @@
+import typing as t
 from dataclasses import dataclass
 from enum import Enum
+from abc import ABC, abstractmethod
 
-from opyl.compile.lexemes import PrimitiveKind
+from opyl.compile.lexemes import PrimitiveKind, Primitive
 from .positioning import Span
 
 
 @dataclass
-class Node:
+class Node(ABC):
     span: Span
+
+    @abstractmethod
+    def accept(self, visitor: "Visitor") -> None:
+        raise NotImplementedError()
 
 
 type Statement = (
     VarDeclaration
+    | ConstDeclaration
     | ForLoop
     | WhileLoop
     | WhenStatement
@@ -20,10 +27,14 @@ type Statement = (
     | ContinueStatement
     | BreakStatement
 )
-type TopLevelDeclaration = EnumDeclaration | VarDeclaration
 
-
-type Expression = IntegerLiteral | Identifier | BinaryExpression
+type Expression = (
+    IntegerLiteral
+    | Identifier
+    | BinaryExpression
+    | PrefixExpression
+    | PostfixExpression
+)
 
 
 class BinaryOperator(Enum):
@@ -32,6 +43,9 @@ class BinaryOperator(Enum):
     Mul = PrimitiveKind.Asterisk
     Div = PrimitiveKind.ForwardSlash
     Pow = PrimitiveKind.Caret
+
+    # TODO: Testing only
+    Compose = PrimitiveKind.Period
 
     def precedence(self) -> int:
         return {
@@ -55,6 +69,35 @@ class BinaryOperator(Enum):
     def values(cls) -> set[PrimitiveKind]:
         return {member.value for member in cls}
 
+    @classmethod
+    def is_binary_op(cls, any: t.Any) -> t.TypeGuard[Primitive]:
+        return isinstance(any, Primitive) and any.kind in cls.values()
+
+
+class PrefixOperator(Enum):
+    Pos = PrimitiveKind.Plus
+    Neg = PrimitiveKind.Hyphen
+
+    @classmethod
+    def values(cls) -> set[PrimitiveKind]:
+        return {member.value for member in cls}
+
+    @classmethod
+    def is_prefix_op(cls, any: t.Any) -> t.TypeGuard[Primitive]:
+        return isinstance(any, Primitive) and any.kind in cls.values()
+
+
+class PostfixOperator(Enum):
+    Increment = PrimitiveKind.TwoPlus
+
+    @classmethod
+    def values(cls) -> set[PrimitiveKind]:
+        return {member.value for member in cls}
+
+    @classmethod
+    def is_postfix_op(cls, any: t.Any) -> t.TypeGuard[Primitive]:
+        return isinstance(any, Primitive) and any.kind in cls.values()
+
 
 @dataclass
 class BinaryExpression(Node):
@@ -64,8 +107,23 @@ class BinaryExpression(Node):
 
 
 @dataclass
+class PrefixExpression(Node):
+    operator: PrefixOperator
+    expr: Expression
+
+
+@dataclass
+class PostfixExpression(Node):
+    operator: PostfixOperator
+    expr: Expression
+
+
+@dataclass
 class Identifier(Node):
     name: str
+
+    def accept(self, visitor: "Visitor"):
+        visitor.identifier(self)
 
 
 @dataclass
@@ -74,15 +132,15 @@ class IntegerLiteral(Node):
 
 
 type Type = Identifier
-# @dataclass
-# class Type(Node):
-#     name: str
 
 
 @dataclass
 class Field(Node):
-    name: str
+    name: Identifier
     type: Type
+
+    def accept(self, visitor: "Visitor"):
+        visitor.field(self)
 
 
 @dataclass
@@ -98,14 +156,14 @@ class GenericParamSpec(Node):
 
 @dataclass
 class FunctionSignature(Node):
-    name: str
+    name: Identifier
     params: list[ParamSpec]
     return_type: str | None  # TODO: from a type perspective, all functions have a return type...
 
 
 @dataclass
 class MethodSignature(Node):
-    name: str
+    name: Identifier
     generic_params: list[GenericParamSpec]
     params: list[ParamSpec]
     return_type: str | None
@@ -113,7 +171,7 @@ class MethodSignature(Node):
 
 type Declaration = (
     FunctionDeclaration
-    | MethodDeclaration
+    # | MethodDeclaration  # TODO: Move elsewhere. This can't go at module level.
     | ConstDeclaration
     | VarDeclaration
     | EnumDeclaration
@@ -125,13 +183,19 @@ type Declaration = (
 
 @dataclass
 class FunctionDeclaration(Node):
+    name: Identifier
     signature: FunctionSignature
     body: list[Statement]
     # TODO: etc
 
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.function(self)
+
 
 @dataclass
 class MethodDeclaration(Node):
+    name: Identifier
     signature: MethodSignature
     body: list[Statement]
     # TODO: etc
@@ -143,19 +207,31 @@ class ConstDeclaration(Node):
     type: Type
     initializer: Expression
 
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.const(self)
+
 
 @dataclass
 class VarDeclaration(Node):
-    is_mut: bool
     name: Identifier
+    is_mut: bool
     type: Type  # TODO: Using strings here may be bad idea.
     initializer: Expression
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.variable(self)
 
 
 @dataclass
 class EnumDeclaration(Node):
-    identifier: Identifier
+    name: Identifier
     members: list[Identifier]
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.enum(self)
 
 
 @dataclass
@@ -167,32 +243,48 @@ class StructDeclaration(Node):
     # ]  # TODO: Hm, the implemented traits could be generic, so just a string isn't sufficient.
     fields: list[Field]
     # methods: list[MethodDeclaration]
-    # functions: list[FunctionDeclaration]
+    functions: list[FunctionDeclaration]
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.struct(self)
 
 
 @dataclass
 class UnionDeclaration(Node):
-    name: str
+    name: Identifier
     members: list[Type]  # TODO: The TODO above applies here too.
     # generic_params: GenericParamSpec
     # trait_impls: list[str]  # TODO: See TODO above.
     # methods: list[MethodDeclaration]
     # functions: list[FunctionDeclaration]
 
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.union(self)
+
 
 @dataclass
 class TraitDeclaration(Node):
-    name: str
+    name: Identifier
     # bases: list[Identifier]
     # generic_params: list[GenericParamSpec]
     # methods: list[MethodSignature]
     functions: list[FunctionSignature]
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.trait(self)
 
 
 @dataclass
 class WhileLoop(Node):
     condition: Expression
     statements: list[Statement]
+
+    @t.override
+    def accept(self, visitor: "Visitor"):
+        visitor.while_loop(self)
 
 
 @dataclass
@@ -201,6 +293,10 @@ class ForLoop(Node):
     iterator: Expression
     statements: list[Statement]
 
+    @t.override
+    def accept(self, visitor: "Visitor"):
+        visitor.for_loop(self)
+
 
 @dataclass
 class IfStatement(Node):
@@ -208,11 +304,18 @@ class IfStatement(Node):
     if_statements: list[Statement]
     else_statements: list[Statement]
 
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.if_statement(self)
+
 
 @dataclass
 class IsClause(Node):
-    pattern: Type
+    target: Type
     statements: list[Statement]
+
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.is_clause(self)
 
 
 @dataclass
@@ -221,17 +324,97 @@ class WhenStatement(Node):
     as_target: Identifier | None
     is_clauses: list[IsClause]
 
+    @t.override
+    def accept(self, visitor: "Visitor"):
+        visitor.when(self)
+
 
 @dataclass
 class ReturnStatement(Node):
     expression: Expression | None
 
+    def accept(self, visitor: "Visitor") -> None:
+        raise NotImplementedError()
+
 
 @dataclass
 class ContinueStatement(Node):
-    ...
+    def accept(self, visitor: "Visitor") -> None:
+        raise NotImplementedError()
 
 
 @dataclass
 class BreakStatement(Node):
-    ...
+    def accept(self, visitor: "Visitor") -> None:
+        raise NotImplementedError()
+
+
+@dataclass
+class ModuleDeclaration(Node):
+    declarations: list[Declaration]
+
+    @abstractmethod
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.module(self)
+
+
+class Visitor(ABC):
+    @abstractmethod
+    def const(self, node: ConstDeclaration) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def variable(self, node: VarDeclaration) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def module(self, node: ModuleDeclaration) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def enum(self, node: EnumDeclaration) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def struct(self, node: StructDeclaration) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def union(self, node: UnionDeclaration) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def trait(self, node: TraitDeclaration) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def function(self, node: FunctionDeclaration) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def identifier(self, node: Identifier) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def field(self, node: Field) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def for_loop(self, node: ForLoop) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def when(self, node: WhenStatement) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def while_loop(self, node: WhileLoop) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def if_statement(self, node: IfStatement) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def is_clause(self, node: IsClause) -> None:
+        raise NotImplementedError()

@@ -1,247 +1,249 @@
+import typing as t
+
 from . import lex
 from . import nodes
 from . import lexemes
-from . import combinators as comb
-from .combinators import Parser
-from .positioning import Stream, Span, TextPosition
+from .positioning import Stream
 from .lexemes import KeywordKind as KK
 from .lexemes import PrimitiveKind as PK
 
+from . import combinators as comb
 
-class OpalParser(comb.Combinator[list[nodes.Declaration]]):
+
+class OpalParser(comb.Parser[list[nodes.Declaration]]):
     def __init__(self, source: str):
-        self.stream = Stream(lex.tokenize(source))
+        super().__init__(tokens=Stream(lex.tokenize(source)))
 
-    def __call__(self) -> list[nodes.Declaration]:
-        return self.many(self.decl).parse()
+    def parse(self) -> list[nodes.Declaration]:
+        ...
 
-    def keyword(self, kw: lexemes.KeywordKind) -> comb.Combinator[lexemes.Keyword]:
-        return comb.Keyword(self.stream, kw)
+    def keyword(self, kw: lexemes.KeywordKind) -> comb.KeywordTerminal:
+        return comb.KeywordTerminal(self.tokens, kw)
 
-    def identifier(self) -> comb.Combinator[nodes.Identifier]:
-        return comb.Identifier(self.stream)
+    def identifier(self) -> comb.IdentifierTerminal:
+        return comb.IdentifierTerminal(self.tokens)
 
-    def maybe[T](self, parser: Parser[T]) -> comb.Combinator[T | None]:
-        return comb.Maybe(self.stream, parser)
+    def primitive(self, kind: lexemes.PrimitiveKind) -> comb.PrimitiveTerminal:
+        return comb.PrimitiveTerminal(self.tokens, kind)
 
-    def many[T](self, parser: Parser[T]) -> comb.Combinator[list[T]]:
-        return comb.Many(self.stream, parser)
+    def many[T](self, parser: t.Callable[[], T]) -> comb.Repeat[T]:
+        return comb.Repeat(self.tokens, comb.Lift(self.tokens, parser))
 
     def decl(self) -> nodes.Declaration:
-        return comb.Choice(
-            stream=self.stream,
-            choices=(
-                self.const_decl,
-                self.var_decl,
-                self.enum_decl,
-                self.struct_decl,
-                self.union_decl,
-                self.trait_decl,
-                self.function_decl,
-            ),
+        return (
+            self.lift(self.const_decl)
+            | self.lift(self.var_decl)
+            | self.lift(self.enum_decl)
+            | self.lift(self.struct_decl)
+            | self.lift(self.union_decl)
+            | self.lift(self.trait_decl)
+            | self.lift(self.function_decl)
         ).parse()
 
     def const_decl(self) -> nodes.ConstDeclaration:
-        (((keyword, ident), tipe), initializer), newline = (
+        parsed = (
             self.keyword(KK.Const)
-            .also(self.identifier())
-            .consume(PK.Colon)
-            .also(self.type())
-            .consume(PK.Equal)
-            .also(self.lift(self.expression))
-            .also(self.primitive(PK.NewLine))
+            & self.identifier().consume(self.primitive(PK.Colon))
+            & self.lift(self.type).consume(self.primitive(PK.Equal))
+            & self.lift(self.expression)
+            & self.primitive(PK.NewLine)
         ).parse()
+
+        (((keyword, ident), tipe), initializer), newline = parsed
 
         return nodes.ConstDeclaration(
             span=keyword.span + newline.span,
-            name=ident,
+            name=nodes.Identifier(span=ident.span, name=ident.identifier),
             type=tipe,
             initializer=initializer,
         )
 
     def var_decl(self) -> nodes.VarDeclaration:
-        (((((keyword, maybe_mut), ident), tipe), initializer)), newline = (
+        parsed = (
             self.keyword(KK.Let)
-            .also(self.maybe(self.keyword(KK.Mut)))
-            .also(self.identifier())
-            .consume(PK.Colon)
-            .also(self.type())
-            .consume(PK.Equal)
-            .also(self.lift(self.expression))
-            .also(self.primitive(PK.NewLine))
+            & (self.keyword(KK.Mut) | self.empty())
+            & self.identifier().consume(self.primitive(PK.Colon))
+            & self.lift(self.type).consume(self.primitive(PK.Equal))
+            & self.lift(self.expression)
+            & self.primitive(PK.NewLine)
         ).parse()
+
+        (
+            (((((keyword, maybe_mut), ident), tipe), initializer)),
+            newline,
+        ) = parsed
 
         return nodes.VarDeclaration(
             span=keyword.span + newline.span,
             is_mut=maybe_mut is not None,
-            name=ident,
+            name=nodes.Identifier(span=ident.span, name=ident.identifier),
             type=tipe,
             initializer=initializer,
         )
 
     def struct_decl(self) -> nodes.StructDeclaration:
-        ((keyword, ident), fields), newline = (
+        parsed = (
             self.keyword(KK.Struct)
-            .also(self.identifier())
-            .also(
-                self.between(
-                    start=self.primitive(PK.LeftBrace),
-                    stop=self.primitive(PK.RightBrace),
-                    between=self.many(self.field),
-                )
-            )
-            .also(self.primitive(PK.NewLine))
+            & (self.identifier())
+            & self.primitive(PK.LeftBrace)
+            .consume_before(self.many(self.field))
+            .consume(self.primitive(PK.RightBrace))
+            & (self.primitive(PK.NewLine))
         ).parse()
+
+        ((keyword, ident), fields), newline = parsed
 
         return nodes.StructDeclaration(
             span=keyword.span + newline.span,
-            name=ident,
+            name=nodes.Identifier(span=ident.span, name=ident.identifier),
             fields=fields,
+            functions=[],  # TODO: parse functions AND methods
         )
 
     def enum_decl(self) -> nodes.EnumDeclaration:
-        (((keyword, ident), (member, members)), newline) = (
+        parsed = (
             self.keyword(KK.Enum)
-            .also(self.identifier())
-            .also(
-                self.between(
-                    start=self.primitive(PK.LeftBrace),
-                    stop=self.primitive(PK.RightBrace),
-                    between=self.identifier()
-                    .consume(PK.Comma)
-                    .also(self.many(self.identifier().consume(PK.Comma))),
-                )
-            )
-            .also(self.primitive(PK.NewLine))
+            & self.identifier()
+            & self.primitive(PK.LeftBrace).consume_before(self.identifier())
+            & comb.Repeat(
+                tokens=self.tokens,
+                parser=self.primitive(PK.Comma).consume_before(self.identifier()),
+            ).consume(self.primitive(PK.RightBrace))
+            & self.primitive(PK.NewLine)
         ).parse()
+
+        (
+            (((keyword, ident), member), members),
+            newline,
+        ) = parsed
+
+        member_node = nodes.Identifier(span=member.span, name=member.identifier)
+        members_nodes = [
+            nodes.Identifier(span=ident.span, name=ident.identifier)
+            for ident in members
+        ]
 
         return nodes.EnumDeclaration(
             span=keyword.span + newline.span,
-            identifier=ident,
-            members=[member] + members,
+            name=nodes.Identifier(span=ident.span, name=ident.identifier),
+            members=[member_node, *members_nodes],
         )
 
     def union_decl(self) -> nodes.UnionDeclaration:
-        ((keyword, ident), (tipe, tipes)), newline = (
+        parsed = (
             self.keyword(KK.Union)
-            .also(self.identifier())
-            .consume(PK.Equal)
-            .also(self.type().also(self.many(self.consume_then(PK.Pipe, self.type()))))
-            .also(self.primitive(PK.NewLine))
-            .parse()
-        )
+            & self.identifier().consume(self.primitive(PK.Equal))
+            & self.lift(self.type)
+            & self.many(
+                lambda: t.cast(
+                    comb.Ok[nodes.Type],
+                    self.primitive(PK.Pipe)
+                    .consume_before(self.lift(self.type))
+                    .parse(),
+                ).item
+            )
+            & self.primitive(PK.NewLine)
+        ).parse()
+
+        (((keyword, ident), tipe), tipes), newline = parsed
 
         return nodes.UnionDeclaration(
             span=keyword.span + newline.span,
-            name=ident.name,
-            members=[tipe] + tipes,
+            name=nodes.Identifier(span=ident.span, name=ident.identifier),
+            members=[tipe, *tipes],
         )
 
     def trait_decl(self) -> nodes.TraitDeclaration:
-        ((keyword, ident), signatures), newline = (
+        parsed = (
             self.keyword(KK.Trait)
-            .also(self.identifier())
-            .also(
-                self.between(
-                    start=self.primitive(PK.LeftBrace),
-                    stop=self.primitive(PK.RightBrace),
-                    between=self.many(self.lift(self.signature).consume(PK.NewLine)),
+            & self.identifier()
+            & (
+                self.primitive(PK.LeftBrace).consume_before(
+                    self.many(self.signature).consume(self.primitive(PK.NewLine))
                 )
+                & (self.primitive(PK.NewLine))
             )
-            .also(self.primitive(PK.NewLine))
-            .parse()
-        )
+        ).parse()
+
+        (keyword, ident), (signatures, newline) = parsed
 
         return nodes.TraitDeclaration(
             span=keyword.span + newline.span,
-            name=ident.name,
+            name=nodes.Identifier(span=ident.span, name=ident.identifier),
             functions=signatures,
         )
 
     def function_decl(self) -> nodes.FunctionDeclaration:
-        (signature, statements), newline = (
+        parsed = (
             self.lift(self.signature)
-            .also(
-                self.between(
-                    start=self.primitive(PK.LeftBrace),
-                    stop=self.primitive(PK.RightBrace),
-                    between=self.many(self.statement),
-                )
-            )
-            .also(self.primitive(PK.NewLine))
+            & self.primitive(PK.LeftBrace)
+            .consume_before(self.many(self.statement))
+            .consume(self.primitive(PK.RightBrace))
+            & self.primitive(PK.NewLine)
         ).parse()
+
+        (signature, statements), newline = parsed
 
         return nodes.FunctionDeclaration(
             span=signature.span + newline.span,
+            name=signature.name,
             signature=signature,
             body=statements,
         )
 
     def field(self) -> nodes.Field:
-        (ident, tipe), newline = (
-            self.identifier()
-            .consume(PK.Colon)
-            .also(self.type())
-            .also(self.primitive(PK.NewLine))
-            .parse()
+        parsed = (
+            self.identifier().consume(self.primitive(PK.Colon))
+            & self.lift(self.type)
+            & self.primitive(PK.NewLine)
+        ).parse()
+
+        (ident, tipe), newline = parsed
+
+        return nodes.Field(
+            span=ident.span + newline.span,
+            name=nodes.Identifier(span=ident.span, name=ident.identifier),
+            type=tipe,
         )
 
-        return nodes.Field(span=ident.span + newline.span, name=ident.name, type=tipe)
-
-    def type(self) -> comb.Combinator[nodes.Type]:
-        return self.identifier()
+    def type(self) -> nodes.Identifier:
+        parsed = self.identifier().parse()
+        return nodes.Identifier(span=parsed.span, name=parsed.identifier)
 
     def signature(self) -> nodes.FunctionSignature:
         ...
 
     def statement(self) -> nodes.Statement:
-        return comb.Choice(
-            stream=self.stream,
-            choices=(
-                self.for_statement,
-                self.while_statement,
-                self.if_statement,
-                self.when_statement,
-                self.return_statement,
-                self.continue_statement,
-                self.break_statement,
-            ),
+        return (
+            self.lift(self.const_decl)
+            | self.lift(self.var_decl)
+            | self.lift(self.for_statement)
+            | self.lift(self.while_statement)
+            | self.lift(self.when_statement)
+            | self.lift(self.if_statement)
+            | self.lift(self.return_statement)
+            | self.lift(self.continue_statement)
+            | self.lift(self.break_statement)
         ).parse()
 
     def expression(self) -> nodes.Expression:
-        return self.identifier().parse()
+        parsed = self.identifier().parse()
+        return nodes.Identifier(span=parsed.span, name=parsed.identifier)
 
-    def generic_specification(self) -> comb.Combinator[nodes.GenericParamSpec]:
-        # self.maybe(
-        #     self.between(
-        #         start=self.primitive(PK.LeftBrace),
-        #         stop=self.primitive(PK.RightBrace),
-        #         between=self.many(self.identifier().consume(PK.Comma)),
-        #     )
-        # ).parse()
-
-        # return nodes.GenericParamSpec(
-        #     span=
-        # )
-        ...
-
-    def parent_traits(self) -> comb.Combinator[None]:
+    def generic_specification(self) -> nodes.GenericParamSpec:
         ...
 
     def if_statement(self) -> nodes.IfStatement:
-        ((keyword, expression), statements), newline = (
+        parsed = (
             self.keyword(KK.If)
-            .also(self.lift(self.expression))
-            .also(
-                self.between(
-                    start=self.primitive(PK.LeftBrace),
-                    stop=self.primitive(PK.RightBrace),
-                    between=self.many(self.statement),
-                )
-            )
-            .also(self.primitive(PK.NewLine))
-            .parse()
-        )
+            & self.lift(self.expression)
+            & self.primitive(PK.LeftBrace)
+            .consume_before(self.many(self.statement))
+            .consume(self.primitive(PK.RightBrace))
+            & self.primitive(PK.NewLine)
+        ).parse()
+
+        ((keyword, expression), statements), newline = parsed
 
         return nodes.IfStatement(
             span=keyword.span + newline.span,
@@ -251,19 +253,16 @@ class OpalParser(comb.Combinator[list[nodes.Declaration]]):
         )
 
     def while_statement(self) -> nodes.WhileLoop:
-        ((keyword, expression), statements), newline = (
+        parsed = (
             self.keyword(KK.While)
-            .also(self.lift(self.expression))
-            .also(
-                self.between(
-                    start=self.primitive(PK.LeftBrace),
-                    stop=self.primitive(PK.RightBrace),
-                    between=self.many(self.statement),
-                )
-            )
-            .also(self.primitive(PK.NewLine))
-            .parse()
-        )
+            & self.lift(self.expression)
+            & self.primitive(PK.LeftBrace)
+            .consume_before(self.many(self.statement))
+            .consume(self.primitive(PK.RightBrace))
+            & self.primitive(PK.NewLine)
+        ).parse()
+
+        ((keyword, expression), statements), newline = parsed
 
         return nodes.WhileLoop(
             span=keyword.span + newline.span,
@@ -272,43 +271,36 @@ class OpalParser(comb.Combinator[list[nodes.Declaration]]):
         )
 
     def for_statement(self) -> nodes.ForLoop:
-        (((keyword, target), iterator), statements), newline = (
+        parsed = (
             self.keyword(KK.For)
-            .also(self.identifier())
-            .consume(KK.In)
-            .also(self.lift(self.expression))
-            .also(
-                self.between(
-                    start=self.primitive(PK.LeftBrace),
-                    stop=self.primitive(PK.RightBrace),
-                    between=self.many(self.statement),
-                )
-            )
-            .also(self.primitive(PK.NewLine))
-            .parse()
-        )
+            & self.identifier()
+            & self.keyword(KK.In).consume_before(self.lift(self.expression))
+            & self.primitive(PK.LeftBrace)
+            .consume_before(self.many(self.statement))
+            .consume(self.primitive(PK.RightBrace))
+            & self.primitive(PK.NewLine)
+        ).parse()
+
+        (((keyword, target), iterator), statements), newline = parsed
 
         return nodes.ForLoop(
             span=keyword.span + newline.span,
-            target=target,
+            target=nodes.Identifier(span=target.span, name=target.identifier),
             iterator=iterator,
             statements=statements,
         )
 
     def when_statement(self) -> nodes.WhenStatement:
-        ((keyword, expression), clauses), newline = (
+        parsed = (
             self.keyword(KK.When)
-            .also(self.lift(self.expression))
-            .also(
-                self.between(
-                    start=self.primitive(PK.LeftBrace),
-                    stop=self.primitive(PK.RightBrace),
-                    between=self.many(self.is_clause),
-                )
-            )
-            .also(self.primitive(PK.NewLine))
-            .parse()
-        )
+            & self.lift(self.expression)
+            & self.primitive(PK.LeftBrace)
+            .consume_before(self.many(self.is_clause))
+            .consume(self.primitive(PK.RightBrace))
+            & self.primitive(PK.NewLine)
+        ).parse()
+
+        ((keyword, expression), clauses), newline = parsed
 
         return nodes.WhenStatement(
             span=keyword.span + newline.span,
@@ -318,42 +310,40 @@ class OpalParser(comb.Combinator[list[nodes.Declaration]]):
         )
 
     def is_clause(self) -> nodes.IsClause:
-        ((keyword, tipe), statements), newline = (
-            self.keyword(KK.As)
-            .also(self.type())
-            .also(
-                self.between(
-                    self.primitive(PK.LeftBrace),
-                    self.primitive(PK.RightBrace),
-                    between=self.many(self.statement),
-                )
-            )
-            .also(self.primitive(PK.NewLine))
-            .parse()
-        )
+        parsed = (
+            self.keyword(KK.Is)
+            & self.lift(self.type).consume(self.primitive(PK.LeftBrace))
+            & self.many(self.statement).consume(self.primitive(PK.RightBrace))
+            & self.primitive(PK.NewLine)
+        ).parse()
+
+        ((keyword, tipe), statements), newline = parsed
 
         return nodes.IsClause(
-            span=keyword.span + newline.span, pattern=tipe, statements=statements
+            span=keyword.span + newline.span, target=tipe, statements=statements
         )
 
     def return_statement(self) -> nodes.ReturnStatement:
-        (keyword, expr), newline = (
+        parsed = (
             self.keyword(KK.Return)
-            .also(self.maybe(self.lift(self.expression)))
-            .also(self.primitive(PK.NewLine))
-            .parse()
-        )
+            & self.lift(self.expression)
+            & self.primitive(PK.NewLine)
+        ).parse()
+
+        (keyword, expr), newline = parsed
 
         return nodes.ReturnStatement(span=keyword.span + newline.span, expression=expr)
 
     def continue_statement(self) -> nodes.ContinueStatement:
-        keyword, newline = (
-            self.keyword(KK.Continue).also(self.primitive(PK.NewLine)).parse()
-        )
+        parsed = (self.keyword(KK.Continue) & self.primitive(PK.NewLine)).parse()
+
+        keyword, newline = parsed
+
         return nodes.ContinueStatement(span=keyword.span + newline.span)
 
     def break_statement(self) -> nodes.BreakStatement:
-        keyword, newline = (
-            self.keyword(KK.Break).also(self.primitive(PK.NewLine)).parse()
-        )
+        parsed = (self.keyword(KK.Break) & self.primitive(PK.NewLine)).parse()
+
+        keyword, newline = parsed
+
         return nodes.BreakStatement(span=keyword.span + newline.span)

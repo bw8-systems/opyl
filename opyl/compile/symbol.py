@@ -1,95 +1,75 @@
-from collections.abc import Sequence
+import typing as t
 from dataclasses import dataclass
 import enum
 
 from opyl.compile import nodes
-
-
-class SemanticErrorKind(enum.Enum):
-    MultiplyDefinedSymbol = enum.auto()
-    UndefinedSymbol = enum.auto()
-
-
-@dataclass
-class SemanticError(Exception):
-    kind: SemanticErrorKind
+from opyl.compile.nodes import FunctionDeclaration
 
 
 class SymbolKind(enum.Enum):
-    ...
+    Module = enum.auto()
+    VariableOrConstant = enum.auto()
+    Function = enum.auto()
+    Type = enum.auto()
 
 
 @dataclass
 class Symbol:
-    name: str
+    # TODO: Use node.Identifier instead of str
+    ident: str
     kind: SymbolKind
+    table: "SymbolTable | None" = None
 
 
-class SymbolTable:
-    def __init__(self):
-        self.symbols: dict[str, Symbol] = {}
+class SymbolTable(nodes.Visitor):
+    def __init__(self, node: nodes.Node):
+        self.symbols = dict[str, Symbol]()  # TODO: Use nodes.Identifier instead of str
+        node.accept(self)
 
-    def add(self, symbol: Symbol):
-        if symbol.name in self.symbols:
-            raise SemanticError(SemanticErrorKind.MultiplyDefinedSymbol)
+    def __setitem__(self, name: str, symbol: Symbol):
+        self.symbols[name] = symbol
 
-        self.symbols.append(symbol)
+    @t.override
+    def module(self, node: nodes.ModuleDeclaration) -> None:
+        for decl in node.declarations:
+            decl.accept(self)
 
-    def get(self, key: str) -> Symbol:
-        try:
-            return self.symbols[key]
-        except KeyError:
-            raise SemanticError(SemanticErrorKind.UndefinedSymbol)
+    @t.override
+    def struct(self, node: nodes.StructDeclaration) -> None:
+        for field in node.fields:
+            self.symbols[field.name.name] = Symbol(
+                ident=field.name.name,
+                kind=SymbolKind.VariableOrConstant,
+            )
 
+        for func in node.functions:
+            self.symbols[func.name.name] = Symbol(
+                ident=func.name.name, kind=SymbolKind.Function, table=SymbolTable(func)
+            )
 
-class SymbolTableBuilder(nodes.NodeVisitor):
-    def __init__(self):
-        self.table = SymbolTable()
+    @t.override
+    def enum(self, node: nodes.EnumDeclaration) -> None:
+        for member in node.members:
+            self.symbols[member.name] = Symbol(
+                ident=member.name,
+                kind=SymbolKind.VariableOrConstant,
+            )
 
-    def visit_keyword(self, keyword: nodes.Keyword) -> None:
-        raise NotImplementedError
+    @t.override
+    def trait(self, node: nodes.TraitDeclaration) -> None:
+        for sig in node.functions:
+            self.symbols[sig.name.name] = Symbol(
+                ident=sig.name.name,
+                kind=SymbolKind.Type,  # Is a signature a type or a function or something new?
+            )
 
-    def visit_integer(self, integer: nodes.Integer) -> None:
-        raise NotImplementedError
+    @t.override
+    def function(self, node: FunctionDeclaration) -> None:
+        for param in node.signature.params:
+            self.symbols[param.field.name.name] = Symbol(
+                ident=param.field.name.name,
+                kind=SymbolKind.VariableOrConstant,
+            )
 
-    def visit_identifier(self, ident: nodes.Identifier) -> None:
-        raise NotImplementedError
-
-    def visit_expression(self, expr: nodes.Expression) -> None:
-        raise NotImplementedError
-
-    def visit_primitive_type(self, type: nodes.PrimitiveType) -> None:
-        raise NotImplementedError
-
-    def visit_identifier_type(self, type: nodes.IdentifierType) -> None:
-        raise NotImplementedError
-
-    def visit_array_type(self, type: nodes.ArrayType) -> None:
-        raise NotImplementedError
-
-    def visit_field(self, field: nodes.Field) -> None:
-        raise NotImplementedError
-
-    def visit_typedef(self, typedef: nodes.Typedef) -> None:
-        raise NotImplementedError
-
-    def visit_const(self, const: nodes.Const) -> None:
-        raise NotImplementedError
-
-    def visit_enum(self, enum: nodes.Enum) -> None:
-        raise NotImplementedError
-
-    def visit_struct(self, struct: nodes.Struct) -> None:
-        raise NotImplementedError
-
-    def visit_module(self, module: nodes.Module) -> None:
-        raise NotImplementedError
-
-
-def get_symbols(tree: Sequence[nodes.Node]) -> SymbolTable:
-    builder = SymbolTableBuilder()
-
-    for declaration in tree:
-        declaration.accept(builder)
-
-    return builder.table
+        for stmt in node.body:
+            stmt.accept(self)

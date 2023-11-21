@@ -2,203 +2,317 @@ import typing as t
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 
-from . import lexemes
-from . import nodes
-from . import positioning
-from . import errors
-
-
-type Parser[T] = t.Callable[[], T]
+from opyl.compile import lexemes
+from opyl.compile.positioning import Stream
 
 
 @dataclass
-class Combinator[T](ABC):
-    stream: positioning.Stream[lexemes.Token]
+class Err[E: Exception]:
+    kind: E
 
-    @abstractmethod
-    def __call__(self) -> T:
-        raise NotImplementedError()
+    def unwrap(self) -> t.Any:
+        raise self.kind
 
-    def parse(self) -> T:
-        return self()
 
-    def consume(
-        self, kind: lexemes.PrimitiveKind | lexemes.KeywordKind
-    ) -> "Combinator[T]":
-        if isinstance(kind, lexemes.PrimitiveKind):
-            return Drop(
-                self.stream, parser=self, separator=Primitive(self.stream, kind)
-            )
-        return Drop(self.stream, parser=self, separator=Keyword(self.stream, kind))
+@dataclass
+class Ok[T]:
+    item: T
 
-    def consume_then[
-        U
-    ](self, kind: lexemes.PrimitiveKind, parser: "Combinator[U]") -> "Combinator[U]":
-        return DropThen(
-            self.stream, parser=parser, separator=Primitive(self.stream, kind)
+    def unwrap(self) -> T:
+        return self.item
+
+
+class ParseException(Exception):
+    ...
+
+
+class UnexpectedEOF(ParseException):
+    @classmethod
+    def instead_of_primitive(cls, kind: "lexemes.PrimitiveKind") -> t.Self:
+        return cls(
+            f"Token stream was exhausted while looking for primitive token '{kind.value}'"
         )
 
-    def lift[U](self, parser: Parser[U]) -> "Combinator[U]":
-        return Lift(stream=self.stream, parser=parser)
-
-    def identifier(self) -> "Combinator[nodes.Identifier]":
-        return Identifier(self.stream)
-
-    def primitive(self, kind: lexemes.PrimitiveKind) -> "Combinator[lexemes.Primitive]":
-        return Primitive(self.stream, kind)
-
-    def between[
-        Start, Stop, InBetween
-    ](
-        self, start: Parser[Start], stop: Parser[Stop], between: Parser[InBetween]
-    ) -> "Combinator[InBetween]":
-        return Between(stream=self.stream, start=start, stop=stop, parser=between)
-
-    def also[U](self, this: "Combinator[U]") -> "Combinator[tuple[T, U]]":
-        return And(self.stream, self, this)
+    @classmethod
+    def instead_of_integer(cls) -> t.Self:
+        return cls("Token stream was exhausted while looking for integer literal.")
 
 
-@dataclass
-class Primitive(Combinator[lexemes.Primitive]):
-    kind: lexemes.PrimitiveKind
+class UnexpectedToken(ParseException):
+    @classmethod
+    def instead_of_primitive(
+        cls, got: "lexemes.Token", instead_of: "lexemes.PrimitiveKind"
+    ) -> t.Self:
+        return cls(
+            f"Got token {got} while looking for primitive token '{instead_of.value}'"
+        )
 
-    def __call__(self) -> lexemes.Primitive:
-        peeked = self.stream.peek()
-        if isinstance(peeked, lexemes.Primitive) and peeked.kind is self.kind:
-            self.stream.next()
-            return peeked
-        raise errors.UnexpectedToken()
+    @classmethod
+    def wrong_primitive(
+        cls, got: "lexemes.PrimitiveKind", expected: "lexemes.PrimitiveKind"
+    ) -> t.Self:
+        return cls(
+            f"Got primitive token '{got.value}' while looking for primitive token '{expected.value}'"
+        )
 
+    @classmethod
+    def instead_of_integer(cls, got: "lexemes.Token") -> t.Self:
+        return cls(f"Got token {got} while looking for integer literal.")
 
-@dataclass
-class Between[Start, Stop, Between](Combinator[Between]):
-    start: Parser[Start]
-    stop: Parser[Stop]
-    parser: Parser[Between]
+    @classmethod
+    def instead_of_identifier(cls, got: "lexemes.Token") -> t.Self:
+        return cls(f"Got token {got} while looking for identifier token.")
 
-    def __call__(self) -> Between:
-        self.start()
-        between = self.parser()
-        self.stop()
-        return between
+    @classmethod
+    def instead_of_keyword(
+        cls, got: "lexemes.Token", expected: "lexemes.KeywordKind"
+    ) -> t.Self:
+        return cls(f"Got token {got} while looking for keyword '{expected}'")
 
 
 @dataclass
-class Drop[T, U](Combinator[T]):
-    parser: Combinator[T]
-    separator: Combinator[U]
+class Parser[T](ABC):
+    tokens: Stream[lexemes.Token]
+
+    @abstractmethod
+    def parse(self) -> T:
+        raise NotImplementedError()
 
     def __call__(self) -> T:
-        item = self.parser()
-        self.separator()
-        return item
+        return self.parse()
+
+    def __or__[U](self, other: "Parser[U]") -> "Parser[T | U]":
+        return Or(self.tokens, self, other)
+
+    def __and__[U](self, other: "Parser[U]") -> "Then[T, U]":
+        return self.then(other)
+
+    def then[U](self, second: "Parser[U]") -> "Then[T, U]":
+        return Then(tokens=self.tokens, first=self, second=second)
+
+    def consume[U](self, second: "Parser[U]") -> "Consume[T, U]":
+        return Consume(tokens=self.tokens, first=self, second=second)
+
+    def consume_before[U](self, second: "Parser[U]") -> "ConsumeBefore[T, U]":
+        return ConsumeBefore(tokens=self.tokens, first=self, second=second)
+
+    def repeat(self, lower: int | None = None, upper: int | None = None) -> "Repeat[T]":
+        return Repeat(tokens=self.tokens, parser=self, lower=lower, upper=upper)
+
+    def lift[U](self, parser: t.Callable[[], U]) -> "Lift[U]":
+        return Lift(tokens=self.tokens, parser=parser)
+
+    def empty(self) -> "Empty":
+        return Empty(self.tokens)
 
 
 @dataclass
-class DropThen[T, U](Combinator[U]):
-    separator: Combinator[T]
-    parser: Combinator[U]
+class Lift[T](Parser[T]):
+    parser: t.Callable[[], T]  # TODO: Should be ParseResult[T]?
 
-    def __call__(self) -> U:
-        self.separator()
+    def parse(self) -> T:
         return self.parser()
 
 
 @dataclass
-class Lift[T](Combinator[T]):
-    parser: Parser[T]
+class Choice[T](Parser[T]):
+    choices: tuple[Parser[T], ...]
 
-    def __call__(self) -> T:
-        return self.parser()
+    def parse(self) -> T:
+        for choice in self.choices:
+            try:
+                return choice.parse()
+            except ParseException:
+                ...
 
-
-@dataclass
-class And[T, U](Combinator[tuple[T, U]]):
-    first: Combinator[T]
-    second: Combinator[U]
-
-    def __call__(self) -> tuple[T, U]:
-        return self.first(), self.second()
+        raise UnexpectedToken("Did not find expected token from choices.")
 
 
 @dataclass
-class Either[T, U](Combinator[T | U]):
-    first: Combinator[T]
-    second: Combinator[U]
+class Or[T, U](Parser[T | U]):
+    this: Parser[T]
+    that: Parser[U]
 
-    def __call__(self) -> T | U:
-        item = Maybe(self.stream, self.first).parse()
-        if item is None:
-            return self.second.parse()
-        raise errors.ParseError
-
-
-@dataclass
-class Maybe[T](Combinator[T | None]):
-    parser: Parser[T]
-
-    def __call__(self) -> T | None:
+    def parse(self) -> T | U:
         try:
-            return self.parser()
-        except errors.ParseError:
-            return None
+            return self.this.parse()
+        except ParseException:
+            return self.that.parse()
 
 
 @dataclass
-class Many[T](Combinator[list[T]]):
-    parser: Parser[T]
+class Then[T, U](Parser[tuple[T, U]]):
+    first: Parser[T]
+    second: Parser[U]
 
-    def __call__(self) -> list[T]:
-        optional_parser = Maybe(self.stream, self.parser)
+    def parse(self) -> tuple[T, U]:
+        return self.first.parse(), self.second.parse()
+
+
+@dataclass
+class Consume[T, U](Parser[T]):
+    first: Parser[T]
+    second: Parser[U]
+
+    def parse(self) -> T:
+        first = self.first.parse()
+        self.second.parse()
+
+        return first
+
+
+@dataclass
+class ConsumeBefore[T, U](Parser[U]):
+    first: Parser[T]
+    second: Parser[U]
+
+    def parse(self) -> U:
+        self.first.parse()
+        second = self.second.parse()
+
+        return second
+
+
+@dataclass
+class Repeat[T](Parser[list[T]]):
+    parser: Parser[T]
+    lower: int | None = None
+    upper: int | None = None
+
+    def __post_init__(self):
+        if self.lower is None:
+            self.validated_lower = 0
+        else:
+            self.validated_lower = self.lower
+
+        assert self.validated_lower > -1
+        assert self.upper is None or isinstance(self.upper, int)
+
+        if isinstance(self.upper, int):
+            assert self.upper > 0
+
+    def parse(self) -> list[T]:
         items = list[T]()
 
         while True:
-            item = optional_parser()
-            if item is None:
-                break
+            try:
+                item = self.parser.parse()
+            except ParseException:
+                if len(items) >= self.validated_lower:
+                    return items
+                raise
+
             items.append(item)
+            if len(items) == self.upper:
+                return items
 
-        return items
+    def extend(self, parser: "Repeat[T]") -> "Extend[T]":
+        return Extend(tokens=self.tokens, first=self, second=parser)
 
 
-@dataclass
-class Choice[T](Combinator[T]):
-    choices: t.Sequence[Parser[T]]
-
-    def __call__(self) -> T:
-        for choice in self.choices:
-            item = Maybe(self.stream, choice).parse()
-            if item is not None:
-                return item
-
-        raise errors.UnexpectedToken()
+class Empty(Parser[None]):
+    def parse(self) -> None:
+        return None
 
 
 @dataclass
-class Keyword(Combinator[lexemes.Keyword]):
+class List[T, U](Parser[list[T]]):
+    item: Parser[T]
+    separator: Parser[U] | None = None
+
+    def __post_init__(self):
+        if self.separator is None:
+            separator = Empty(self.tokens)
+        else:
+            separator = self.separator
+
+        self.list_parser = (self.item | Empty(self.tokens)).then(
+            separator.consume_before(self.item).repeat()
+        )
+
+    def parse(self) -> list[T]:
+        head, args = self.list_parser.parse()
+
+        if head is not None:
+            args.insert(0, head)
+
+        return args
+
+
+@dataclass
+class Extend[T](Parser[list[T]]):
+    first: Repeat[T]
+    second: Repeat[T]
+
+    def __post_init__(self):
+        self.then_parser = self.then(self.second)
+
+    def parse(self) -> list[T]:
+        first_list, second_list = self.then_parser.parse()
+        return [*first_list, *second_list]
+
+
+@dataclass
+class PrimitiveTerminal(Parser[lexemes.Primitive]):
+    terminal: lexemes.PrimitiveKind
+
+    def parse(self) -> lexemes.Primitive:
+        peeked = self.tokens.peek()
+        if peeked is None:
+            raise UnexpectedEOF.instead_of_primitive(self.terminal)
+
+        if not isinstance(peeked, lexemes.Primitive):
+            raise UnexpectedToken.instead_of_primitive(peeked, self.terminal)
+
+        if not peeked.kind == self.terminal:
+            raise UnexpectedToken.wrong_primitive(
+                got=peeked.kind, expected=self.terminal
+            )
+
+        self.tokens.advance()
+        return peeked
+
+
+class IdentifierTerminal(Parser[lexemes.Identifier]):
+    def parse(self) -> lexemes.Identifier:
+        peeked = self.tokens.peek()
+
+        if peeked is None:
+            raise UnexpectedEOF("Unexpected EOF while looking for identifier token.")
+        if not isinstance(peeked, lexemes.Identifier):
+            raise UnexpectedToken.instead_of_identifier(peeked)
+
+        self.tokens.advance()
+        return peeked
+
+
+@dataclass
+class KeywordTerminal(Parser[lexemes.Keyword]):
     kind: lexemes.KeywordKind
 
-    def __call__(self) -> lexemes.Keyword:
-        peeked = self.stream.peek()
-        if isinstance(peeked, lexemes.Keyword) and peeked.kind is self.kind:
-            self.stream.next()
-            return peeked
-        raise errors.UnexpectedToken()
+    def parse(self) -> lexemes.Keyword:
+        peeked = self.tokens.peek()
+
+        if peeked is None:
+            raise UnexpectedEOF(
+                f"Unexpected EOF while looking for keyword {self.kind}."
+            )
+        if not isinstance(peeked, lexemes.Keyword):
+            raise UnexpectedToken.instead_of_keyword(peeked, self.kind)
+
+        self.tokens.advance()
+        return peeked
 
 
-class Identifier(Combinator[nodes.Identifier]):
-    def __call__(self) -> nodes.Identifier:
-        peeked = self.stream.peek()
-        if isinstance(peeked, lexemes.Identifier):
-            self.stream.next()
-            return nodes.Identifier(span=peeked.span, name=peeked.identifier)
-        raise errors.UnexpectedToken()
+@dataclass
+class IntegerLiteralTerminal(Parser[lexemes.IntegerLiteral]):
+    def parse(self) -> lexemes.IntegerLiteral:
+        peeked = self.tokens.peek()
 
+        if peeked is None:
+            raise UnexpectedEOF.instead_of_integer()
+        if not isinstance(peeked, lexemes.IntegerLiteral):
+            raise UnexpectedToken.instead_of_integer(peeked)
 
-class IntegerLiteral(Combinator[nodes.IntegerLiteral]):
-    def __call__(self) -> nodes.IntegerLiteral:
-        peeked = self.stream.peek()
-        if isinstance(peeked, lexemes.IntegerLiteral):
-            self.stream.next()
-            return nodes.IntegerLiteral(span=peeked.span, integer=peeked.integer)
-        raise errors.UnexpectedToken()
+        self.tokens.advance()
+        return peeked

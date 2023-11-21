@@ -36,6 +36,7 @@ class KeywordKind(enum.Enum):
 
 class PrimitiveKind(enum.Enum):
     Plus = "+"
+    TwoPlus = "++"  # TODO: Maybe tokenize as two Plus then join after tokenizing.
     Hyphen = "-"
     Asterisk = "*"
     ForwardSlash = "/"
@@ -43,7 +44,7 @@ class PrimitiveKind(enum.Enum):
     Percent = "%"
     At = "@"
     Ampersand = "&"
-
+    Exclamation = "!"
     Colon = ":"
     Equal = "="
     LeftBrace = "{"
@@ -55,6 +56,7 @@ class PrimitiveKind(enum.Enum):
     LeftBracket = "["
     RightBracket = "]"
     Comma = ","
+    Period = "."
     RightArrow = "->"
     Pipe = "|"
     NewLine = "\n"
