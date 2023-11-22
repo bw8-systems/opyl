@@ -253,6 +253,12 @@ class Parser[T](ABC):
                     Lift(self.tokens, target),
                 )
 
+    def into[U](self, transformer: t.Callable[[T], U]) -> "Parser[U]":
+        def wrap() -> U:
+            return transformer(self.parse())
+
+        return Lift(self.tokens, parser=wrap)
+
 
 @dataclass
 class Lift[T](Parser[T]):

@@ -29,9 +29,11 @@ type Statement = (
     | Expression
 )
 
-type Expression = (
-    IntegerLiteral | Identifier | InfixExpression | PrefixExpression | PostfixExpression
-)
+# type Expression = (
+#     IntegerLiteral | Identifier | InfixExpression | PrefixExpression | PostfixExpression
+# )
+
+type Expression = Identifier | IntegerLiteral
 
 
 class InfixOperator(Enum):
