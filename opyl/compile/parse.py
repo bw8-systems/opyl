@@ -21,9 +21,9 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         super().__init__(tokens=Stream(tokens))
 
     def parse(self) -> list[nodes.Declaration]:
-        return self.many(self.many(PK.NewLine).consume_before(self.decl)).parse()
+        return self.many(self.many(PK.NewLine).consume_before(self.declaration)).parse()
 
-    def decl(self) -> nodes.Declaration:
+    def declaration(self) -> nodes.Declaration:
         return (
             self.lift(self.const_decl)
             | self.var_decl
@@ -32,6 +32,20 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             | self.union_decl
             | self.trait_decl
             | self.function_decl
+        ).parse()
+
+    def statement(self) -> nodes.Statement:
+        return (
+            self.lift(self.const_decl)
+            | self.var_decl
+            | self.for_statement
+            | self.while_statement
+            | self.when_statement
+            | self.if_statement
+            | self.return_statement
+            | self.continue_statement
+            | self.break_statement
+            | self.expression_statement
         ).parse()
 
     def const_decl(self) -> nodes.ConstDeclaration:
@@ -177,22 +191,8 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             body=statements,
         )
 
-    def statement(self) -> nodes.Statement:
-        return (
-            self.lift(self.const_decl)
-            | self.var_decl
-            | self.for_statement
-            | self.while_statement
-            | self.when_statement
-            | self.if_statement
-            | self.return_statement
-            | self.continue_statement
-            | self.break_statement
-            | self.expression()
-        ).parse()
-
-    def expression(self) -> comb.Parser[nodes.Expression]:
-        return self.identifier() | self.integer()
+    def expression_statement(self) -> nodes.Expression:
+        return self.expression().parse()
 
     def if_statement(self) -> nodes.IfStatement:
         parsed = (
@@ -310,6 +310,9 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
 
     def integer(self) -> comb.IntegerLiteralTerminal:
         return comb.IntegerLiteralTerminal(self.tokens)
+
+    def expression(self) -> comb.Parser[nodes.Expression]:
+        return self.identifier() | self.integer()
 
     def block[U](
         self, parser: comb.Parser[U] | t.Callable[[], U]
