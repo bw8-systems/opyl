@@ -336,8 +336,9 @@ class IsClause(Node):
 @dataclass
 class WhenStatement(Node):
     expression: Expression
-    as_target: Identifier | None
+    target: Identifier | None
     is_clauses: list[IsClause]
+    else_statements: list[Statement]
 
     @t.override
     def accept(self, visitor: "Visitor"):

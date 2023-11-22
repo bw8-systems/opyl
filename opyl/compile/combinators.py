@@ -7,6 +7,8 @@ from compile import nodes
 from compile import errors
 from compile.positioning import Stream
 
+from compile.lexemes import PrimitiveKind as PK
+
 
 @dataclass
 class Parser[T](ABC):
@@ -170,6 +172,26 @@ class Parser[T](ABC):
                     second=Lift(tokens=self.tokens, parser=second),
                 )
 
+    def newlines(self):
+        return Consume(
+            tokens=self.tokens,
+            first=self,
+            second=Repeat(
+                tokens=self.tokens,
+                parser=PrimitiveTerminal(tokens=self.tokens, terminal=PK.NewLine),
+            ),
+        )
+
+    def after_newlines(self):
+        return ConsumeBefore(
+            tokens=self.tokens,
+            first=Repeat(
+                tokens=self.tokens,
+                parser=PrimitiveTerminal(tokens=self.tokens, terminal=PK.NewLine),
+            ),
+            second=self,
+        )
+
     def repeat(self, lower: int | None = None, upper: int | None = None) -> "Repeat[T]":
         return Repeat(tokens=self.tokens, parser=self, lower=lower, upper=upper)
 
@@ -179,11 +201,57 @@ class Parser[T](ABC):
     def empty(self) -> "Empty":
         return Empty(self.tokens)
 
-    def maybe[U](self, parser: t.Callable[[], U]) -> "Or[U, None]":
-        return Lift(self.tokens, parser) | self.empty()
+    @t.overload
+    def maybe[U](self, target: t.Callable[[], U]) -> "Or[U, None]":
+        ...
 
-    def many[U](self, parser: t.Callable[[], U]) -> "Repeat[U]":
-        return Repeat(self.tokens, Lift(self.tokens, parser))
+    @t.overload
+    def maybe(self, target: lexemes.PrimitiveKind) -> "Or[lexemes.Primitive, None]":
+        ...
+
+    @t.overload
+    def maybe(self, target: lexemes.KeywordKind) -> "Or[lexemes.Keyword, None]":
+        ...
+
+    def maybe[U](
+        self, target: t.Callable[[], U] | lexemes.PrimitiveKind | lexemes.KeywordKind
+    ) -> "Or[U, None] | Or[lexemes.Primitive, None] | Or[lexemes.Keyword, None]":
+        match target:
+            case lexemes.PrimitiveKind():
+                return (
+                    Lift(self.tokens, PrimitiveTerminal(self.tokens, target))
+                    | self.empty()
+                )
+            case lexemes.KeywordKind():
+                return (
+                    Lift(self.tokens, KeywordTerminal(self.tokens, target))
+                    | self.empty()
+                )
+            case _:
+                return Lift(self.tokens, target) | self.empty()
+
+    @t.overload
+    def many[U](self, target: t.Callable[[], U]) -> "Repeat[U]":
+        ...
+
+    @t.overload
+    def many(self, target: lexemes.PrimitiveKind) -> "Repeat[lexemes.Primitive]":
+        ...
+
+    def many[U](
+        self, target: t.Callable[[], U] | lexemes.PrimitiveKind
+    ) -> "Repeat[U] | Repeat[lexemes.Primitive]":
+        match target:
+            case lexemes.PrimitiveKind():
+                return Repeat(
+                    self.tokens,
+                    Lift(self.tokens, PrimitiveTerminal(self.tokens, target)),
+                )
+            case _:
+                return Repeat(
+                    self.tokens,
+                    Lift(self.tokens, target),
+                )
 
 
 @dataclass

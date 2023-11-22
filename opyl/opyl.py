@@ -93,9 +93,40 @@ def main(foo: Foo, bar: mut Bar, anon baz: Baz) {
         another
     }
 
+    for idx in range {
+        stmt
+
+        continue
+    }
+
+    while expr {
+        lmao
+        break
+    }
+
+    when union_value {
+        is ThisType {
+            some_expr_stmt
+        }
+        is ThatType {}
+    }
+
+    when union_value {
+        is ThisType {
+            some_expr_stmt
+        }
+        is ThatType {}
+    }
+
+    when arbitrary_value as av {
+        is ThisType {}
+        is ThatType {}
+        else { bitchin }
+    }
+
+
     return 0
 }
-
 """
 parser = parse.OpalParser(test_source)
 

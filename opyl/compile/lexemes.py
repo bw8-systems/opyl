@@ -27,7 +27,7 @@ class KeywordKind(enum.Enum):
 
     Return = "return"
     Break = "break"
-    Continue = "Continue"
+    Continue = "continue"
 
     Char = "char"
     Mut = "mut"
