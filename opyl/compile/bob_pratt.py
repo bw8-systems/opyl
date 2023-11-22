@@ -2,70 +2,59 @@ import typing as t
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from opyl.compile import errors
 from opyl.compile import nodes
 from opyl.compile import lexemes
-from opyl.compile.positioning import Stream, Span
+from opyl.compile.lexemes import PrimitiveKind as PK
+from opyl.compile.positioning import Stream
+
+
+def operator_precedence(token: lexemes.Token) -> int:
+    ...
 
 
 @dataclass
 class Parser:
     tokens: Stream[lexemes.Token]
 
-    def __post_init__(self):
-        # Given a token type, these maps return a parser corresponding to it.
-        self.prefix_parselets = dict[type[lexemes.Token], PrefixParselet]()
-        self.infix_parselets = dict[type[lexemes.Token], InfixParselet]()
-
-        # Now populate the
-        # Define the grammar - this says that a "lexeme.Identifier" token should
-        # be parsed via the "NameParselet" parser.
-        self.register(lexemes.Identifier, NameParselet())
-
-        # There is a single prefix parselet for the simple prefix arithmetic operators.
-        # these calls do the same as above, but implicity map them to PrefixOperatorParselet.
-        self.prefix(lexemes.PrimitiveKind.Plus)
-        self.prefix(lexemes.PrimitiveKind.Hyphen)
-
-    def register(
-        self,
-        token_kind: type[lexemes.Token],
-        parselet: "PrefixParselet | InfixParselet",
-    ):
-        if isinstance(parselet, PrefixParselet):
-            self.prefix_parselets[token_kind] = parselet
-        if isinstance(parselet, InfixParselet):
-            self.infix_parselets[token_kind] = parselet
-
-    def prefix(self, token_kind: lexemes.PrimitiveKind):
-        self.register(lexemes.Primitive, PrefixOperatorParselet())
-
-    def expression(self) -> nodes.Expression | None:
-        # Grab the next token, and locate an appropriate parselet given its value.
-        # Then, use that parser to parse the left hand side of an expression (prefix expr)
-        parselet = None
-        match self.tokens.peek():
-            case None:
-                return None
-            case lexemes.Identifier():
-                parselet = NameParselet()
-
-        token = self.tokens.next()
-        prefix = self.prefix_parselets[type(token)]
-        left = prefix.parse(self, token)
-
+    def expression(self, precedence: int) -> nodes.Expression | None:
         peeked = self.tokens.peek()
-        assert peeked is not None
+        match peeked:
+            case lexemes.Identifier():
+                self.tokens.next()
+                left = self.parse_name(peeked)
+            case lexemes.Primitive(_, kind) if kind in (PK.Plus, PK.Hyphen):
+                self.tokens.next()
+                left = self.parse_prefix(peeked)
+            case None:
+                raise errors.UnexpectedEOF()
+            case _:
+                raise errors.UnexpectedToken()
 
-        try:
-            infix = self.infix_parselets[type(peeked)]
-        except KeyError:
-            infix = None
+        while precedence < operator_precedence(peeked):
+            peeked = self.tokens.peek()
+            match peeked:
 
-        if infix is None:
-            return left
 
-        token = self.tokens.next()
-        return infix.parse(self, left, token)
+        # peeked = self.tokens.peek()
+        # assert peeked is not None
+
+        # try:
+        #     infix = self.infix_parselet(peeked)
+        # except KeyError:
+        #     infix = None
+
+        # if infix is None:
+        #     return left
+
+        # token = self.tokens.next()
+        # return infix.parse(self, left, token)
+
+    def parse_name(self, token: lexemes.Identifier) -> nodes.Expression:
+        ...
+
+    def parse_prefix(self, token: lexemes.Token) -> nodes.Expression:
+        ...
 
 
 class PrefixParselet(ABC):
@@ -98,6 +87,7 @@ class PrefixOperatorParselet(PrefixParselet):
         assert nodes.PrefixOperator.is_prefix_op(token)
 
         operand = parser.expression()
+        assert operand is not None
         return nodes.PrefixExpression(
             span=token.span, operator=nodes.PrefixOperator(token.kind), expr=operand
         )
@@ -126,12 +116,12 @@ class BinaryOperatorParselet(InfixParselet):
     def parse(
         self, parser: Parser, left: nodes.Expression, token: lexemes.Token
     ) -> nodes.Expression:
-        assert nodes.BinaryOperator.is_binary_op(token)
+        assert nodes.InfixOperator.is_binary_op(token)
 
         right = parser.expression()
-        return nodes.BinaryExpression(
+        return nodes.InfixExpression(
             left.span + right.span,
-            operator=nodes.BinaryOperator(token.kind),
+            operator=nodes.InfixOperator(token.kind),
             left=left,
             right=right,
         )
@@ -168,16 +158,16 @@ class PostfixOperatorParselet(InfixParselet):
 #     ) -> nodes.Expression:
 #         """Left is function name, token is LeftParen"""
 
-from pprint import pprint
+# from pprint import pprint
 
-tokens = [
-    lexemes.Identifier(identifier="foo", span=Span.default()),
-    lexemes.Primitive(kind=lexemes.PrimitiveKind.Plus, span=Span.default()),
-    lexemes.Identifier(identifier="bar", span=Span.default()),
-]
+# tokens = [
+#     lexemes.Identifier(identifier="foo", span=Span.default()),
+#     lexemes.Primitive(kind=lexemes.PrimitiveKind.Plus, span=Span.default()),
+#     lexemes.Identifier(identifier="bar", span=Span.default()),
+# ]
 
-parser = Parser(tokens=Stream(tokens))
-expr = parser.expression()
+# parser = Parser(tokens=Stream(tokens))
+# expr = parser.expression()
 
-pprint(parser.expression())
-pprint(parser.expression())
+# pprint(parser.expression())
+# pprint(parser.expression())

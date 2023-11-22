@@ -1,8 +1,6 @@
 from opyl import parse
 from opyl import nodes
 
-from opyl.compile.lexemes import PrimitiveKind as PK
-
 
 def test_mut_var_decl():
     parser = parse.OpalParser("let mut foo: Foo = bar\n")
@@ -220,17 +218,25 @@ def test_trait():
     assert len(trait_decl.functions) == 1
 
 
-# TODO: why tf does this not work
-# def test_if_statement():
-#     parser = parse.OpalParser(
-#         """if expr { other }
-#         """
-#     )
-#     stmt = parser.if_statement()
+def test_if_statement():
+    parser = parse.OpalParser("if expr { other }\n")
+    stmt = parser.if_statement()
 
-#     assert isinstance(stmt.if_condition, nodes.Identifier)
-#     assert len(stmt.if_statements) == 1
-#     assert isinstance(stmt.if_statements[0], nodes.Identifier)
+    assert isinstance(stmt.if_condition, nodes.Identifier)
+    assert len(stmt.if_statements) == 1
+    assert isinstance(stmt.if_statements[0], nodes.Identifier)
+
+
+def test_if_else_statement():
+    parser = parse.OpalParser("if expr { other } else { another }\n")
+    stmt = parser.if_statement()
+
+    assert isinstance(stmt.if_condition, nodes.Identifier)
+    assert len(stmt.if_statements) == 1
+    assert isinstance(stmt.if_statements[0], nodes.Identifier)
+    assert len(stmt.else_statements) == 1
+    assert isinstance(stmt.else_statements[0], nodes.Identifier)
+    assert stmt.else_statements[0].name == "another"
 
 
 # TODO: Check more whitespace variations for... everything
@@ -266,3 +272,27 @@ def test_function_with_params_no_return():
     assert isinstance(func_decl.body[1], nodes.IfStatement)
     assert isinstance(func_decl.body[2], nodes.ReturnStatement)
     # TODO: Leverage statement tests rather than checking details here
+
+
+def test_when_as_else():
+    parser = parse.OpalParser(
+        """
+        when arbitrary_value as av {
+            is ThisType {}
+            is ThatType {}
+            else { bitchin }
+        }
+        """
+    )
+
+    # TODO: Add utility for doing this more simply. This strips
+    # newlines prior to the parsing target (when statement in this case)
+    stmt = parser.lift(parser.when_statement).after_newlines().parse()
+
+    assert (
+        isinstance(stmt.expression, nodes.Identifier)
+        and stmt.expression.name == "arbitrary_value"
+    )
+    assert isinstance(stmt.target, nodes.Identifier) and stmt.target.name == "av"
+    assert len(stmt.is_clauses) == 2
+    assert len(stmt.else_statements) == 1

@@ -30,15 +30,11 @@ type Statement = (
 )
 
 type Expression = (
-    IntegerLiteral
-    | Identifier
-    | BinaryExpression
-    | PrefixExpression
-    | PostfixExpression
+    IntegerLiteral | Identifier | InfixExpression | PrefixExpression | PostfixExpression
 )
 
 
-class BinaryOperator(Enum):
+class InfixOperator(Enum):
     Add = PrimitiveKind.Plus
     Sub = PrimitiveKind.Hyphen
     Mul = PrimitiveKind.Asterisk
@@ -50,20 +46,20 @@ class BinaryOperator(Enum):
 
     def precedence(self) -> int:
         return {
-            BinaryOperator.Add: 1,
-            BinaryOperator.Sub: 1,
-            BinaryOperator.Mul: 2,
-            BinaryOperator.Div: 2,
-            BinaryOperator.Pow: 3,
+            InfixOperator.Add: 1,
+            InfixOperator.Sub: 1,
+            InfixOperator.Mul: 2,
+            InfixOperator.Div: 2,
+            InfixOperator.Pow: 3,
         }[self]
 
     def is_right_associative(self) -> bool:
         return {
-            BinaryOperator.Add: False,
-            BinaryOperator.Sub: False,
-            BinaryOperator.Mul: False,
-            BinaryOperator.Div: False,
-            BinaryOperator.Pow: True,
+            InfixOperator.Add: False,
+            InfixOperator.Sub: False,
+            InfixOperator.Mul: False,
+            InfixOperator.Div: False,
+            InfixOperator.Pow: True,
         }[self]
 
     @classmethod
@@ -101,10 +97,14 @@ class PostfixOperator(Enum):
 
 
 @dataclass
-class BinaryExpression(Node):
-    operator: BinaryOperator
+class InfixExpression(Node):
+    operator: InfixOperator
     left: Expression
     right: Expression
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.infix(self)
 
 
 @dataclass
@@ -112,11 +112,19 @@ class PrefixExpression(Node):
     operator: PrefixOperator
     expr: Expression
 
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.prefix(self)
+
 
 @dataclass
 class PostfixExpression(Node):
     operator: PostfixOperator
     expr: Expression
+
+    @t.override
+    def accept(self, visitor: "Visitor"):
+        visitor.postfix(self)
 
 
 @dataclass
@@ -445,4 +453,16 @@ class Visitor(ABC):
 
     @abstractmethod
     def param_spec(self, node: ParamSpec) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def prefix(self, node: PrefixExpression) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def postfix(self, node: PostfixExpression) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def infix(self, node: InfixExpression) -> None:
         raise NotImplementedError()

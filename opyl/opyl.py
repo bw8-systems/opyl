@@ -132,6 +132,7 @@ parser = parse.OpalParser(test_source)
 
 parsed = parser.parse()
 pprint(parsed)
+assert len(parsed) == 10
 # higher_order = parser.keyword(Keywords.Let) >> parser.whitespace() & parser.maybe(
 #     parser.keyword(Keywords.Mut)
 # )
