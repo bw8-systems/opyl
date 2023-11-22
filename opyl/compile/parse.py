@@ -21,9 +21,9 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         super().__init__(tokens=Stream(tokens))
 
     def parse(self) -> list[nodes.Declaration]:
-        return self.many(self.many(PK.NewLine).consume_before(self.declaration)).parse()
+        return self.many(self.declaration().after_newlines()).parse()
 
-    def declaration(self) -> nodes.Declaration:
+    def declaration(self) -> comb.Parser[nodes.Declaration]:
         return (
             self.lift(self.const_decl)
             | self.var_decl
@@ -32,9 +32,9 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             | self.union_decl
             | self.trait_decl
             | self.function_decl
-        ).parse()
+        )
 
-    def statement(self) -> nodes.Statement:
+    def statement(self) -> comb.Parser[nodes.Statement]:
         return (
             self.lift(self.const_decl)
             | self.var_decl
@@ -46,7 +46,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             | self.continue_statement
             | self.break_statement
             | self.expression_statement
-        ).parse()
+        )
 
     def const_decl(self) -> nodes.ConstDeclaration:
         # const NAME: Type = initializer\n
@@ -178,7 +178,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
     def function_decl(self) -> nodes.FunctionDeclaration:
         parsed = (
             self.lift(self.signature).newlines()
-            & self.block(self.statement)
+            & self.block(self.statement())
             & PK.NewLine
         ).parse()
 
@@ -198,7 +198,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         parsed = (
             KK.If
             & self.expression().newlines()
-            & self.block(self.statement)
+            & self.block(self.statement())
             & self.maybe(self.else_clause())
             & PK.NewLine
         ).parse()
@@ -221,7 +221,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         parsed = (
             KK.While
             & self.expression().newlines()
-            & self.block(self.statement)
+            & self.block(self.statement())
             & PK.NewLine
         ).parse()
 
@@ -238,7 +238,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             KK.For
             & self.identifier() >> self.keyword(KK.In)
             & self.expression().newlines()
-            & self.block(self.statement)
+            & self.block(self.statement())
             & PK.NewLine
         ).parse()
 
@@ -345,7 +345,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             )
 
         return (
-            KK.Is & self.type().newlines() & self.block(self.statement) & PK.NewLine
+            KK.Is & self.type().newlines() & self.block(self.statement()) & PK.NewLine
         ).into(is_clause_builder)
 
     def as_clause(self) -> comb.Parser[nodes.Identifier]:
@@ -353,7 +353,9 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
 
     def else_clause(self) -> comb.Parser[list[nodes.Statement]]:
         return (
-            self.keyword(KK.Else).newlines().consume_before(self.block(self.statement))
+            self.keyword(KK.Else)
+            .newlines()
+            .consume_before(self.block(self.statement()))
         )
 
     def generic_specification(self) -> nodes.GenericParamSpec:
