@@ -260,24 +260,27 @@ class Parser[T](ABC):
         return Lift(self.tokens, parser=wrap)
 
     @t.overload
-    def list[U](self, delimiter: "Parser[U]") -> "List[T, U]":
+    def list[U, V](
+        self, parser: "Parser[U]", *, separated_by: "Parser[V]"
+    ) -> "List[U, V]":
         ...
 
     @t.overload
-    def list(self, delimiter: lexemes.PrimitiveKind) -> "List[T, lexemes.Primitive]":
+    def list[U](
+        self, parser: "Parser[U]", *, separated_by: lexemes.PrimitiveKind
+    ) -> "List[U, lexemes.Primitive]":
         ...
 
-    def list[U](
-        self, delimiter: "Parser[U] | lexemes.PrimitiveKind"
-    ) -> "List[T, U] | List[T, lexemes.Primitive]":
-        match delimiter:
+    def list[U, V](
+        self, parser: "Parser[U]", *, separated_by: "Parser[V] | lexemes.PrimitiveKind"
+    ) -> "List[U, V] | List[U, lexemes.Primitive]":
+        match separated_by:
             case lexemes.PrimitiveKind():
                 return List(
-                    self.tokens, self, PrimitiveTerminal(self.tokens, delimiter)
+                    self.tokens, parser, PrimitiveTerminal(self.tokens, separated_by)
                 )
             case _:
-                return List(self.tokens, self, delimiter)
-        ...
+                return List(self.tokens, parser, separated_by)
 
 
 @dataclass
