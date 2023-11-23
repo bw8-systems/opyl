@@ -98,17 +98,16 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         parsed = (
             KK.Struct
             & self.identifier() >> self.primitive(PK.LeftBrace).newlines()
-            & self.field()
-            & self.many(self.field().after_newlines()) >> PK.RightBrace
+            & self.field().list(PK.NewLine) >> PK.RightBrace
             & PK.NewLine
         ).parse()
 
-        (((keyword, ident), field), fields), newline = parsed
+        ((keyword, ident), fields), newline = parsed
 
         return nodes.StructDeclaration(
             span=keyword.span + newline.span,
             name=ident,
-            fields=[field, *fields],
+            fields=fields,
             functions=[],  # TODO: parse functions AND methods
         )
 
@@ -116,46 +115,41 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         parsed = (
             KK.Enum
             & self.identifier() >> self.primitive(PK.LeftBrace).newlines()
-            & self.identifier()
-            & self.many(
-                self.primitive(PK.Comma)
-                .consume_before(self.many(PK.NewLine))
-                .consume_before(self.identifier().newlines())
-            )
+            & self.identifier().list(self.primitive(PK.Comma).newlines())
             >> self.maybe(PK.Comma).newlines()
             >> PK.RightBrace
             & PK.NewLine
         ).parse()
 
         (
-            (((keyword, ident), member), members),
+            ((keyword, ident), members),
             newline,
         ) = parsed
 
         return nodes.EnumDeclaration(
             span=keyword.span + newline.span,
             name=ident,
-            members=[member, *members],
+            members=members,
         )
 
     def union_decl(self) -> nodes.UnionDeclaration:
+        # TODO: Unions should be required to have atleast two types.
         parsed = (
             KK.Union
             & self.identifier() >> PK.Equal
-            & self.type()
-            & self.many(self.primitive(PK.Pipe).consume_before(self.type()))
+            & self.type().list(PK.Pipe)
             & self.maybe(self.block(self.function_decl))
             & PK.NewLine
         ).parse()
 
-        ((((keyword, ident), tipe), tipes), maybe_functions), newline = parsed
+        (((keyword, ident), tipes), maybe_functions), newline = parsed
 
         functions = [] if maybe_functions is None else maybe_functions
 
         return nodes.UnionDeclaration(
             span=keyword.span + newline.span,
             name=ident,
-            members=[tipe, *tipes],
+            members=tipes,
             functions=functions,
         )
 
@@ -379,14 +373,13 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         parsed = (
             KK.Def
             & self.identifier() >> PK.LeftParenthesis
-            & self.maybe(self.param_spec())
-            & self.many(self.primitive(PK.Comma).consume_before(self.param_spec()))
+            & self.maybe(self.param_spec().list(PK.Comma))
             & PK.RightParenthesis
             & self.maybe(self.primitive(PK.RightArrow).consume_before(self.type()))
         ).parse()
 
         (
-            ((((keyword, ident), maybe_param), params), right_paren),
+            (((keyword, ident), params), right_paren),
             maybe_return_type,
         ) = parsed
 
@@ -397,13 +390,10 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             return_type = None
             end = right_paren
 
-        if maybe_param is not None:
-            params.insert(0, maybe_param)
-
         return nodes.FunctionSignature(
             span=keyword.span + end.span,
             name=ident,
-            params=params,
+            params=params if params is not None else [],
             return_type=return_type,
         )
 
