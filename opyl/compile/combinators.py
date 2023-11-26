@@ -21,156 +21,14 @@ class Parser[T](ABC):
     def __call__(self) -> T:
         return self.parse()
 
-    def __or__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Or[T, U]":
-        match other:
-            case Parser():
-                return Or(self.tokens, self, other)
-            case _:
-                return Or(self.tokens, self, Lift(self.tokens, other))
+    def __or__[U](self, second: "Parser[U]") -> "Or[T, U]":
+        return Or(self.tokens, self, second)
 
-    def __ror__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Parser[T | U]":
-        match other:
-            case Parser():
-                return Or(self.tokens, self, other)
-            case _:
-                return Or(self.tokens, self, Lift(self.tokens, other))
-
-    @t.overload
-    def __and__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Then[T, U]":
-        ...
-
-    @t.overload
-    def __and__(self, other: lexemes.PrimitiveKind) -> "Then[T, lexemes.Primitive]":
-        ...
-
-    @t.overload
-    def __and__(self, other: lexemes.KeywordKind) -> "Then[T, lexemes.Keyword]":
-        ...
-
-    def __and__[U](
-        self,
-        other: "Parser[U] | t.Callable[[], U] | lexemes.PrimitiveKind | lexemes.KeywordKind",
-    ) -> "Then[T, U] | Then[T, lexemes.Primitive] | Then[T, lexemes.Keyword]":
-        match other:
-            case Parser():
-                return self.then(other)
-            case lexemes.PrimitiveKind():
-                return self.then(PrimitiveTerminal(self.tokens, other))
-            case lexemes.KeywordKind():
-                return self.then(KeywordTerminal(self.tokens, other))
-            case _:
-                return self.then(Lift(self.tokens, other))
-
-    @t.overload
-    def __rand__[U](self, other: "Parser[U] | t.Callable[[], U]") -> "Then[U, T]":
-        ...
-
-    @t.overload
-    def __rand__(self, other: lexemes.PrimitiveKind) -> "Then[lexemes.Primitive, T]":
-        ...
-
-    @t.overload
-    def __rand__(self, other: lexemes.KeywordKind) -> "Then[lexemes.Keyword, T]":
-        ...
-
-    def __rand__[U](
-        self,
-        other: "Parser[U] | t.Callable[[], U] | lexemes.PrimitiveKind | lexemes.KeywordKind",
-    ) -> "Then[U, T] | Then[lexemes.Primitive, T] | Then[lexemes.Keyword, T]":
-        match other:
-            case Parser():
-                return other.then(self)
-            case lexemes.PrimitiveKind():
-                return PrimitiveTerminal(self.tokens, other).then(self)
-            case lexemes.KeywordKind():
-                return KeywordTerminal(self.tokens, other).then(self)
-            case _:
-                return Lift(self.tokens, other).then(self)
-
-    def then[U](self, second: "Parser[U]") -> "Then[T, U]":
-        return Then(tokens=self.tokens, first=self, second=second)
-
-    @t.overload
-    def consume[U](self, second: "Parser[U]") -> "Consume[T, U]":
-        ...
-
-    @t.overload
-    def consume(self, second: lexemes.PrimitiveKind) -> "Consume[T, lexemes.Primitive]":
-        ...
-
-    def consume[U](
-        self, second: "Parser[U] | lexemes.PrimitiveKind"
-    ) -> "Consume[T, U] | Consume[T, lexemes.Primitive]":
-        match second:
-            case Parser():
-                return Consume(tokens=self.tokens, first=self, second=second)
-            case _:
-                return Consume(
-                    tokens=self.tokens,
-                    first=self,
-                    second=PrimitiveTerminal(self.tokens, second),
-                )
-
-    @t.overload
     def __rshift__[U](self, second: "Parser[U]") -> "Consume[T, U]":
-        ...
+        return Consume(tokens=self.tokens, first=self, second=second)
 
-    @t.overload
-    def __rshift__(
-        self, second: lexemes.PrimitiveKind
-    ) -> "Consume[T, lexemes.Primitive]":
-        ...
-
-    def __rshift__[U](
-        self, second: "Parser[U] | lexemes.PrimitiveKind"
-    ) -> "Consume[T, U] | Consume[T, lexemes.Primitive]":
-        return self.consume(second)
-
-    @t.overload
-    def __rrshift__[U](self, second: "Parser[U]") -> "Consume[T, U]":
-        ...
-
-    @t.overload
-    def __rrshift__(
-        self, second: lexemes.PrimitiveKind
-    ) -> "Consume[T, lexemes.Primitive]":
-        ...
-
-    def __rrshift__[U](
-        self, second: "Parser[U] | lexemes.PrimitiveKind"
-    ) -> "Consume[T, U] | Consume[T, lexemes.Primitive]":
-        return self.consume(second)
-
-    @t.overload
-    def consume_before[U](
-        self, second: "Parser[U] | t.Callable[[], U]"
-    ) -> "ConsumeBefore[T, U]":
-        ...
-
-    @t.overload
-    def consume_before(
-        self, second: lexemes.PrimitiveKind
-    ) -> "ConsumeBefore[T, lexemes.Primitive]":
-        ...
-
-    def consume_before[U](
-        self, second: "t.Callable[[], U] | Parser[U] | lexemes.PrimitiveKind"
-    ) -> "ConsumeBefore[T, U] | ConsumeBefore[T, lexemes.Primitive]":
-        match second:
-            case Parser():
-                return ConsumeBefore(tokens=self.tokens, first=self, second=second)
-            case lexemes.PrimitiveKind():
-                return ConsumeBefore(
-                    tokens=self.tokens,
-                    first=self,
-                    second=PrimitiveTerminal(self.tokens, second),
-                )
-            case _:
-                return ConsumeBefore(
-                    tokens=self.tokens,
-                    first=self,
-                    second=Lift(tokens=self.tokens, parser=second),
-                )
+    def consume_before[U](self, second: "Parser[U]") -> "ConsumeBefore[T, U]":
+        return ConsumeBefore(tokens=self.tokens, first=self, second=second)
 
     def newlines(self):
         return Consume(
@@ -201,57 +59,14 @@ class Parser[T](ABC):
     def empty(self) -> "Empty":
         return Empty(self.tokens)
 
-    @t.overload
-    def maybe[U](self, target: t.Callable[[], U]) -> "Or[U, None]":
-        ...
+    def maybe[U](self, target: "Parser[U]") -> "Or[U, None]":
+        return target | self.empty()
 
-    @t.overload
-    def maybe(self, target: lexemes.PrimitiveKind) -> "Or[lexemes.Primitive, None]":
-        ...
-
-    @t.overload
-    def maybe(self, target: lexemes.KeywordKind) -> "Or[lexemes.Keyword, None]":
-        ...
-
-    def maybe[U](
-        self, target: t.Callable[[], U] | lexemes.PrimitiveKind | lexemes.KeywordKind
-    ) -> "Or[U, None] | Or[lexemes.Primitive, None] | Or[lexemes.Keyword, None]":
-        match target:
-            case lexemes.PrimitiveKind():
-                return (
-                    Lift(self.tokens, PrimitiveTerminal(self.tokens, target))
-                    | self.empty()
-                )
-            case lexemes.KeywordKind():
-                return (
-                    Lift(self.tokens, KeywordTerminal(self.tokens, target))
-                    | self.empty()
-                )
-            case _:
-                return Lift(self.tokens, target) | self.empty()
-
-    @t.overload
     def many[U](self, target: t.Callable[[], U]) -> "Repeat[U]":
-        ...
-
-    @t.overload
-    def many(self, target: lexemes.PrimitiveKind) -> "Repeat[lexemes.Primitive]":
-        ...
-
-    def many[U](
-        self, target: t.Callable[[], U] | lexemes.PrimitiveKind
-    ) -> "Repeat[U] | Repeat[lexemes.Primitive]":
-        match target:
-            case lexemes.PrimitiveKind():
-                return Repeat(
-                    self.tokens,
-                    Lift(self.tokens, PrimitiveTerminal(self.tokens, target)),
-                )
-            case _:
-                return Repeat(
-                    self.tokens,
-                    Lift(self.tokens, target),
-                )
+        return Repeat(
+            self.tokens,
+            Lift(self.tokens, target),
+        )
 
     def into[U](self, transformer: t.Callable[[T], U]) -> "Parser[U]":
         def wrap() -> U:
@@ -259,43 +74,37 @@ class Parser[T](ABC):
 
         return Lift(self.tokens, parser=wrap)
 
-    @t.overload
     def list[U, V](
         self, parser: "Parser[U]", *, separated_by: "Parser[V]"
     ) -> "List[U, V]":
-        ...
+        return List(self.tokens, parser, separated_by)
 
-    @t.overload
-    def list[U](
-        self, parser: "Parser[U]", *, separated_by: lexemes.PrimitiveKind
-    ) -> "List[U, lexemes.Primitive]":
-        ...
 
-    def list[U, V](
-        self, parser: "Parser[U]", *, separated_by: "Parser[V] | lexemes.PrimitiveKind"
-    ) -> "List[U, V] | List[U, lexemes.Primitive]":
-        match separated_by:
-            case lexemes.PrimitiveKind():
-                return List(
-                    self.tokens, parser, PrimitiveTerminal(self.tokens, separated_by)
-                )
-            case _:
-                return List(self.tokens, parser, separated_by)
+class TerminalParser[T](Parser[T]):
+    def __and__[U](self, other: "Parser[U]") -> "And[T, U]":
+        return And(self.tokens, self, other)
+
+
+class NonTerminalParser[T](Parser[T]):
+    def __and__[U](self, other: "Parser[U]") -> "And[T, U]":
+        return And(self.tokens, self, other)
 
 
 @dataclass
 class Lift[T](Parser[T]):
     parser: t.Callable[[], T]
 
+    @t.override
     def parse(self) -> T:
         return self.parser()
 
 
 @dataclass
-class Or[T, U](Parser[T | U]):
+class Or[T, U](NonTerminalParser[T | U]):
     this: Parser[T]
     that: Parser[U]
 
+    @t.override
     def parse(self) -> T | U:
         try:
             # print(self.tokens.stack.index)
@@ -310,19 +119,37 @@ class Or[T, U](Parser[T | U]):
 
 
 @dataclass
-class Then[T, U](Parser[tuple[T, U]]):
+class And[T, U](Parser[tuple[T, U]]):
     first: Parser[T]
     second: Parser[U]
 
+    @t.override
     def parse(self) -> tuple[T, U]:
         return self.first.parse(), self.second.parse()
 
+    def __and__[V](self, other: Parser[V]) -> "Chain[T, U, V]":
+        return Chain(self.tokens, self, other)
+
 
 @dataclass
-class Consume[T, U](Parser[T]):
+class Chain[*Ts, T](Parser[tuple[*Ts, T]]):
+    front: Parser[tuple[*Ts]]
+    last: Parser[T]
+
+    @t.override
+    def parse(self) -> tuple[*Ts, T]:
+        return *self.front.parse(), self.last.parse()
+
+    def __and__[U](self, other: Parser[U]) -> "Chain[*Ts, T, U]":
+        return Chain(self.tokens, self, other)
+
+
+@dataclass
+class Consume[T, U](NonTerminalParser[T]):
     first: Parser[T]
     second: Parser[U]
 
+    @t.override
     def parse(self) -> T:
         first = self.first.parse()
         self.second.parse()
@@ -331,10 +158,11 @@ class Consume[T, U](Parser[T]):
 
 
 @dataclass
-class ConsumeBefore[T, U](Parser[U]):
+class ConsumeBefore[T, U](NonTerminalParser[U]):
     first: Parser[T]
     second: Parser[U]
 
+    @t.override
     def parse(self) -> U:
         self.first.parse()
         second = self.second.parse()
@@ -343,7 +171,7 @@ class ConsumeBefore[T, U](Parser[U]):
 
 
 @dataclass
-class Repeat[T](Parser[list[T]]):
+class Repeat[T](NonTerminalParser[list[T]]):
     parser: Parser[T]
     lower: int | None = None
     upper: int | None = None
@@ -360,6 +188,7 @@ class Repeat[T](Parser[list[T]]):
         if isinstance(self.upper, int):
             assert self.upper > 0
 
+    @t.override
     def parse(self) -> list[T]:
         items = list[T]()
 
@@ -374,9 +203,6 @@ class Repeat[T](Parser[list[T]]):
             items.append(item)
             if len(items) == self.upper:
                 return items
-
-    def extend(self, parser: "Repeat[T]") -> "Extend[T]":
-        return Extend(tokens=self.tokens, first=self, second=parser)
 
 
 class Empty(Parser[None]):
@@ -395,10 +221,11 @@ class List[T, U](Parser[list[T]]):
         else:
             separator = self.separator
 
-        self.list_parser = (self.item | Empty(self.tokens)).then(
-            separator.consume_before(self.item).repeat()
-        )
+        self.list_parser = (self.item | Empty(self.tokens)) & separator.consume_before(
+            self.item
+        ).repeat()
 
+    @t.override
     def parse(self) -> list[T]:
         head, args = self.list_parser.parse()
 
@@ -409,22 +236,10 @@ class List[T, U](Parser[list[T]]):
 
 
 @dataclass
-class Extend[T](Parser[list[T]]):
-    first: Repeat[T]
-    second: Repeat[T]
-
-    def __post_init__(self):
-        self.then_parser = self.then(self.second)
-
-    def parse(self) -> list[T]:
-        first_list, second_list = self.then_parser.parse()
-        return [*first_list, *second_list]
-
-
-@dataclass
-class PrimitiveTerminal(Parser[lexemes.Primitive]):
+class PrimitiveTerminal(TerminalParser[lexemes.Primitive]):
     terminal: lexemes.PrimitiveKind
 
+    @t.override
     def parse(self) -> lexemes.Primitive:
         peeked = self.tokens.peek()
         if peeked is None:
@@ -442,7 +257,8 @@ class PrimitiveTerminal(Parser[lexemes.Primitive]):
         return peeked
 
 
-class IdentifierTerminal(Parser[nodes.Identifier]):
+class IdentifierTerminal(TerminalParser[nodes.Identifier]):
+    @t.override
     def parse(self) -> nodes.Identifier:
         peeked = self.tokens.peek()
 
@@ -458,9 +274,10 @@ class IdentifierTerminal(Parser[nodes.Identifier]):
 
 
 @dataclass
-class KeywordTerminal(Parser[lexemes.Keyword]):
+class KeywordTerminal(TerminalParser[lexemes.Keyword]):
     kind: lexemes.KeywordKind
 
+    @t.override
     def parse(self) -> lexemes.Keyword:
         peeked = self.tokens.peek()
 
@@ -476,7 +293,8 @@ class KeywordTerminal(Parser[lexemes.Keyword]):
 
 
 @dataclass
-class IntegerLiteralTerminal(Parser[nodes.IntegerLiteral]):
+class IntegerLiteralTerminal(TerminalParser[nodes.IntegerLiteral]):
+    @t.override
     def parse(self) -> nodes.IntegerLiteral:
         peeked = self.tokens.peek()
 

@@ -1,7 +1,10 @@
 from pprint import pprint
 
 from compile import parse
-
+from compile import combinators as comb
+from compile import lex
+from compile import lexemes
+from compile.positioning import Stream
 
 opal_fibonacci = """
 union Option[T] = T | None
@@ -128,11 +131,11 @@ def main(foo: Foo, bar: mut Bar, anon baz: Baz) {
     return 0
 }
 """
-parser = parse.OpalParser(test_source)
+# parser = parse.OpalParser(test_source)
 
-parsed = parser.parse()
-pprint(parsed)
-assert len(parsed) == 10
+# parsed = parser.parse()
+# pprint(parsed)
+# assert len(parsed) == 10
 # higher_order = parser.keyword(Keywords.Let) >> parser.whitespace() & parser.maybe(
 #     parser.keyword(Keywords.Mut)
 # )
@@ -140,3 +143,51 @@ assert len(parsed) == 10
 # pprint(parser.parse())
 # for item in higher_order.parse()
 #     pprint(item)
+
+# stream = Stream(
+#     list(
+#         filter(
+#             lambda token: not isinstance(token, lexemes.Whitespace),
+#             lex.tokenize("mut"),
+#         )
+#     )
+# )
+
+# parser = parse.OpalParser("def")
+# print(parser.maybe(parser.keyword(lexemes.KeywordKind.Mut)).parse())
+
+tokens = Stream(
+    list(
+        filter(
+            lambda token: not isinstance(token, lexemes.Whitespace),
+            lex.tokenize("def foo 1 +"),
+        )
+    )
+)
+
+value = (
+    # ~comb.KeywordTerminal(tokens, lexemes.KeywordKind.Def)
+    comb.IdentifierTerminal(tokens) & ~comb.IntegerLiteralTerminal(tokens)
+).parse()
+
+
+# pprint(parse.OpalParser("let foo: Foo = 5\n").parse())
+# nodes = (
+#     comb.KeywordTerminal(stream, lexemes.KeywordKind.Def)
+#     & comb.IdentifierTerminal(stream)
+#     & comb.PrimitiveTerminal(stream, terminal=lexemes.PrimitiveKind.LeftParenthesis)
+#     & comb.PrimitiveTerminal(stream, terminal=lexemes.PrimitiveKind.RightParenthesis)
+#     & comb.PrimitiveTerminal(stream, terminal=lexemes.PrimitiveKind.LeftBrace)
+#     & comb.PrimitiveTerminal(stream, terminal=lexemes.PrimitiveKind.RightBrace)
+# ).parse()
+
+# for node in nodes:
+#     pprint(node)
+
+# print(comb.IdentifierTerminal(Stream(lex.tokenize("foo"))).parse())
+# print(comb.IntegerLiteralTerminal(Stream(lex.tokenize("4"))).parse())
+# print(
+#     comb.PrimitiveTerminal(
+#         Stream(lex.tokenize("+")), lexemes.PrimitiveKind.Plus
+#     ).parse()
+# )
