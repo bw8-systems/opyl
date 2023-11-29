@@ -53,8 +53,11 @@ class Parser[T](ABC):
     def repeat(self, lower: int | None = None, upper: int | None = None) -> "Repeat[T]":
         return Repeat(tokens=self.tokens, parser=self, lower=lower, upper=upper)
 
-    def lift[U](self, parser: t.Callable[[], U]) -> "Lift[U]":
+    def lift[U](self, parser: "Parser[U]") -> "Lift[U]":
         return Lift(tokens=self.tokens, parser=parser)
+
+    def defer[U](self, parser_factory: t.Callable[[], "Parser[U]"]) -> "Defer[U]":
+        return Defer(tokens=self.tokens, parser_factory=parser_factory)
 
     def empty(self) -> "Empty":
         return Empty(self.tokens)
@@ -62,10 +65,10 @@ class Parser[T](ABC):
     def maybe[U](self, target: "Parser[U]") -> "Or[U, None]":
         return target | self.empty()
 
-    def many[U](self, target: t.Callable[[], U]) -> "Repeat[U]":
+    def many[U](self, target: "Parser[U]") -> "Repeat[U]":
         return Repeat(
             self.tokens,
-            Lift(self.tokens, target),
+            target,
         )
 
     def into[U](self, transformer: t.Callable[[T], U]) -> "Parser[U]":
@@ -100,6 +103,15 @@ class Lift[T](Parser[T]):
 
 
 @dataclass
+class Defer[T](Parser[T]):
+    parser_factory: t.Callable[[], Parser[T]]
+
+    @t.override
+    def parse(self) -> T:
+        return self.parser_factory().parse()
+
+
+@dataclass
 class Or[T, U](NonTerminalParser[T | U]):
     this: Parser[T]
     that: Parser[U]
@@ -107,7 +119,6 @@ class Or[T, U](NonTerminalParser[T | U]):
     @t.override
     def parse(self) -> T | U:
         try:
-            # print(self.tokens.stack.index)
             return self.this.parse()
         except errors.ParseException:
             try:

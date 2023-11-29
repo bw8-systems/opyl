@@ -220,7 +220,7 @@ def test_trait():
 
 def test_if_statement():
     parser = parse.OpalParser("if expr { other }\n")
-    stmt = parser.if_statement()
+    stmt = parser.if_statement().parse()
 
     assert isinstance(stmt.if_condition, nodes.Identifier)
     assert len(stmt.if_statements) == 1
@@ -229,7 +229,7 @@ def test_if_statement():
 
 def test_if_else_statement():
     parser = parse.OpalParser("if expr { other } else { another }\n")
-    stmt = parser.if_statement()
+    stmt = parser.if_statement().parse()
 
     assert isinstance(stmt.if_condition, nodes.Identifier)
     assert len(stmt.if_statements) == 1
@@ -287,7 +287,7 @@ def test_when_as_else():
 
     # TODO: Add utility for doing this more simply. This strips
     # newlines prior to the parsing target (when statement in this case)
-    stmt = parser.lift(parser.when_statement).after_newlines().parse()
+    stmt = parser.lift(parser.when_statement()).after_newlines().parse()
 
     assert (
         isinstance(stmt.expression, nodes.Identifier)
