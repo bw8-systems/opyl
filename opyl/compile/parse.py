@@ -6,7 +6,7 @@ from compile import lexemes
 from compile.positioning import Stream
 from compile.lexemes import KeywordKind as KK
 from compile.lexemes import PrimitiveKind as PK
-
+from compile import pratt
 from compile import combinators as comb
 
 
@@ -43,8 +43,6 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             | self.return_statement()
             | self.for_statement()
             | self.while_statement()
-            | self.continue_statement()
-            | self.break_statement()
             | self.expression_statement()
         )
 
@@ -315,7 +313,9 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             (
                 self.keyword(KK.While)
                 & self.expression().newlines()
-                & self.block(self.statement)
+                & self.block(
+                    self.statement
+                )  # TODO: Update to allow break and continue statements. They have been removed from the base statement parser.
                 & self.primitive(PK.NewLine)
             )
             .into(
@@ -346,7 +346,9 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
                 self.keyword(KK.For)
                 & self.identifier() >> self.keyword(KK.In)
                 & self.expression().newlines()
-                & self.block(self.statement)
+                & self.block(
+                    self.statement
+                )  # TODO: Update to allow break and continue statements. They have been removed from the base statement parser.
                 & self.primitive(PK.NewLine)
             )
             .into(
@@ -483,7 +485,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         return comb.IntegerLiteralTerminal(self.tokens)
 
     def expression(self) -> comb.Parser[nodes.Expression]:
-        return self.identifier() | self.integer()
+        return pratt.ExpressionParser(self.tokens)
 
     def block[U](
         self, parser_factory: t.Callable[[], comb.Parser[U]]

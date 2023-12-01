@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from abc import ABC, abstractmethod
 
-from compile.lexemes import PrimitiveKind, Primitive
+from compile.lexemes import PrimitiveKind, Primitive, Token
 from compile.positioning import Span
 
 
@@ -24,65 +24,91 @@ type Statement = (
     | WhenStatement
     | IfStatement
     | ReturnStatement
-    | ContinueStatement
-    | BreakStatement
     | Expression
 )
 
-# type Expression = (
-#     IntegerLiteral | Identifier | InfixExpression | PrefixExpression | PostfixExpression
-# )
+type Expression = (
+    Identifier
+    | IntegerLiteral
+    | PrefixExpression
+    | BinaryExpression
+    | CallExpression
+    | SubscriptExpression
+)
 
-type Expression = Identifier | IntegerLiteral
 
-
-class InfixOperator(Enum):
-    Add = PrimitiveKind.Plus
-    Sub = PrimitiveKind.Hyphen
-    Mul = PrimitiveKind.Asterisk
-    Div = PrimitiveKind.ForwardSlash
-    Pow = PrimitiveKind.Caret
-
-    # TODO: Testing only
-    Compose = PrimitiveKind.Period
+class BinaryOperator(Enum):
+    Addition = PrimitiveKind.Plus
+    Subtraction = PrimitiveKind.Hyphen
+    Multiplication = PrimitiveKind.Asterisk
+    Division = PrimitiveKind.ForwardSlash
+    Exponentiation = PrimitiveKind.Caret
 
     def precedence(self) -> int:
         return {
-            InfixOperator.Add: 1,
-            InfixOperator.Sub: 1,
-            InfixOperator.Mul: 2,
-            InfixOperator.Div: 2,
-            InfixOperator.Pow: 3,
+            self.Addition: 1,
+            self.Subtraction: 1,
+            self.Multiplication: 2,
+            self.Division: 2,
+            self.Exponentiation: 3,
         }[self]
 
     def is_right_associative(self) -> bool:
         return {
-            InfixOperator.Add: False,
-            InfixOperator.Sub: False,
-            InfixOperator.Mul: False,
-            InfixOperator.Div: False,
-            InfixOperator.Pow: True,
+            self.Addition: False,
+            self.Subtraction: False,
+            self.Multiplication: False,
+            self.Division: False,
+            self.Exponentiation: True,
         }[self]
 
     @classmethod
     def values(cls) -> set[PrimitiveKind]:
         return {member.value for member in cls}
 
+    @t.overload
     @classmethod
-    def is_binary_op(cls, any: t.Any) -> t.TypeGuard[Primitive]:
+    def is_binary_op(cls, any: Token) -> t.TypeGuard[Primitive]:
+        ...
+
+    @t.overload
+    @classmethod
+    def is_binary_op(cls, any: PrimitiveKind) -> bool:
+        ...
+
+    @classmethod
+    def is_binary_op(cls, any: Token | PrimitiveKind) -> t.TypeGuard[Primitive] | bool:
+        if isinstance(any, PrimitiveKind) and any in cls.values():
+            return True
         return isinstance(any, Primitive) and any.kind in cls.values()
 
 
 class PrefixOperator(Enum):
-    Pos = PrimitiveKind.Plus
-    Neg = PrimitiveKind.Hyphen
+    ArithmeticPlus = PrimitiveKind.Plus
+    ArithmeticMinus = PrimitiveKind.Hyphen
+    LogicalNegate = PrimitiveKind.Exclamation
+
+    def precedence(self) -> int:
+        return 6
 
     @classmethod
     def values(cls) -> set[PrimitiveKind]:
         return {member.value for member in cls}
 
+    @t.overload
     @classmethod
-    def is_prefix_op(cls, any: t.Any) -> t.TypeGuard[Primitive]:
+    def is_prefix_op(cls, any: Token) -> t.TypeGuard[Primitive]:
+        ...
+
+    @t.overload
+    @classmethod
+    def is_prefix_op(cls, any: PrimitiveKind) -> bool:
+        ...
+
+    @classmethod
+    def is_prefix_op(cls, any: Token | PrimitiveKind) -> t.TypeGuard[Primitive] | bool:
+        if isinstance(any, PrimitiveKind) and any in cls.values():
+            return True
         return isinstance(any, Primitive) and any.kind in cls.values()
 
 
@@ -99,14 +125,34 @@ class PostfixOperator(Enum):
 
 
 @dataclass
-class InfixExpression(Node):
-    operator: InfixOperator
+class BinaryExpression(Node):
+    operator: BinaryOperator
     left: Expression
     right: Expression
 
     @t.override
     def accept(self, visitor: "Visitor") -> None:
-        visitor.infix(self)
+        visitor.binary(self)
+
+
+@dataclass
+class CallExpression(Node):
+    function: Expression
+    arguments: list[Expression]
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.call_expr(self)
+
+
+@dataclass
+class SubscriptExpression(Node):
+    base: Expression
+    index: Expression
+
+    @t.override
+    def accept(self, visitor: "Visitor") -> None:
+        visitor.subscript(self)
 
 
 @dataclass
@@ -466,5 +512,13 @@ class Visitor(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def infix(self, node: InfixExpression) -> None:
+    def binary(self, node: BinaryExpression) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def call_expr(self, node: CallExpression) -> None:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def subscript(self, node: SubscriptExpression) -> None:
         raise NotImplementedError()

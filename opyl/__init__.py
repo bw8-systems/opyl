@@ -1,3 +1,4 @@
+from compile import pratt
 from compile import lex
 from compile import parse
 from compile import positioning
