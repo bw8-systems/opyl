@@ -37,6 +37,13 @@ type Expression = (
 )
 
 
+class InfixOperator(Enum):
+    Invocation = PrimitiveKind.LeftParenthesis
+    Subscript = PrimitiveKind.LeftBracket
+    MemberAccess = PrimitiveKind.Period
+    ScopeResolution = PrimitiveKind.ColonColon
+
+
 class BinaryOperator(Enum):
     Addition = PrimitiveKind.Plus
     Subtraction = PrimitiveKind.Hyphen
@@ -124,6 +131,16 @@ class PrefixOperator(Enum):
         if isinstance(any, PrimitiveKind) and any in cls.values():
             return True
         return isinstance(any, Primitive) and any.kind in cls.values()
+
+
+# PRECEDENCE_TABLE = (
+#     (InfixOperator.ScopeResolution,),
+#     (InfixOperator.Invocation, InfixOperator.Subscript),
+#     (BinaryOperator.Multiplication, BinaryOperator.Division),
+#     (BinaryOperator.Addition, BinaryOperator.Subtraction),
+#     (BinaryOperator.GreaterThan, BinaryOperator.LessThan),
+#     (BinaryOperator.Equality),
+# )
 
 
 @dataclass

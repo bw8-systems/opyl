@@ -27,19 +27,10 @@ OpalParser("while expr {}").while_loop().parse()
 OpalParser("struct Span {foo: Foo}").parse()
 
 source = """
-def fibonacci(n: u8) -> u8 {
-    if n < 2 {
-        return 1
-    }
-
-    return fibonacci(n - 1) + fibonacci(n - 2)
-}
-
 def main(args: Arguments) -> ExitStatus {
     for i in Range(10) {
         print(fibonacci(i))
     }
-
     return ExitStatus::Success
 }
 """

@@ -3,7 +3,11 @@ import typing as t
 from compile import lexemes
 
 
-class ParseException(Exception):
+class CompileException(Exception):
+    ...
+
+
+class ParseException(CompileException):
     ...
 
 
@@ -51,37 +55,4 @@ class UnexpectedToken(ParseException):
         return cls(f"Got token {got} while looking for keyword '{expected}'")
 
 
-class CompileError(Exception):
-    ...
-
-
-class LexError(CompileError):
-    ...
-
-
-class UnexpectedCharacter(LexError):
-    ...
-
-
-class NoMatch(LexError):
-    ...
-
-
-# class UnexpectedEOF(LexError):
-#     ...
-
-
-class UnclosedStringLiteral(LexError):
-    ...
-
-
-class IllegalCharacter(LexError):
-    ...
-
-
-class ParseError(CompileError):
-    ...
-
-
-# class UnexpectedToken(ParseError):
-#     ...
+type ParseResult[T] = T | ParseException

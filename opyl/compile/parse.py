@@ -46,6 +46,7 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         )
 
     def statement(self) -> comb.Parser[nodes.Statement]:
+        # parsers = self.const_decl
         return (
             self.const_decl()
             | self.var_decl()

@@ -359,31 +359,6 @@ class Empty(Parser[None]):
         return None
 
 
-# @dataclass
-# class List[T, U](Parser[list[T]]):
-#     item: Parser[T]
-#     separator: Parser[U] | None = None
-
-#     def __post_init__(self):
-#         if self.separator is None:
-#             separator = Empty(self.tokens)
-#         else:
-#             separator = self.separator
-
-#         self.list_parser = (self.item | Empty(self.tokens)) & separator.consume_before(
-#             self.item
-#         ).repeat()
-
-#     @t.override
-#     def parse(self) -> list[T]:
-#         head, args = self.list_parser.parse()
-
-#         if head is not None:
-#             args.insert(0, head)
-
-#         return args
-
-
 @dataclass
 class PrimitiveTerminal(TerminalParser[lexemes.Primitive]):
     terminal: lexemes.PrimitiveKind

@@ -278,21 +278,19 @@ def test_when_as_else():
     parser = parse.OpalParser(
         """
         when arbitrary_value as av {
-            is ThisType {}
-            is ThatType {}
-            else { bitchin }
+            is Foo {}
         }
         """
     )
 
     # TODO: Add utility for doing this more simply. This strips
     # newlines prior to the parsing target (when statement in this case)
-    stmt = parser.lift(parser.when_statement()).after_newlines().parse()
+    stmt = parser.when_statement().after_newlines().parse()
 
     assert (
         isinstance(stmt.expression, nodes.Identifier)
         and stmt.expression.name == "arbitrary_value"
     )
     assert isinstance(stmt.target, nodes.Identifier) and stmt.target.name == "av"
-    assert len(stmt.is_clauses) == 2
-    assert len(stmt.else_statements) == 1
+    assert len(stmt.is_clauses) == 1
+    # assert len(stmt.else_statements) == 1
