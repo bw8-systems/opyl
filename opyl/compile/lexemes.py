@@ -34,14 +34,9 @@ class KeywordKind(enum.Enum):
     Anon = "anon"
 
 
-class BuiltInTypes(enum.Enum):
-    U8 = "u8"
-    U32 = "u32"
-
-
 class PrimitiveKind(enum.Enum):
     Plus = "+"
-    TwoPlus = "++"  # TODO: Maybe tokenize as two Plus then join after tokenizing.
+    RightArrow = "->"
     Hyphen = "-"
     Asterisk = "*"
     ForwardSlash = "/"
@@ -50,7 +45,9 @@ class PrimitiveKind(enum.Enum):
     At = "@"
     Ampersand = "&"
     Exclamation = "!"
+    ColonColon = "::"
     Colon = ":"
+    EqualEqual = "=="
     Equal = "="
     LeftBrace = "{"
     RightBrace = "}"
@@ -62,17 +59,9 @@ class PrimitiveKind(enum.Enum):
     RightBracket = "]"
     Comma = ","
     Period = "."
-    RightArrow = "->"
     Pipe = "|"
     NewLine = "\n"
     Eof = ""
-
-
-class GroupingPair(enum.Enum):
-    Parenthesis = PrimitiveKind.LeftParenthesis, PrimitiveKind.RightParenthesis
-    Brace = PrimitiveKind.LeftBrace, PrimitiveKind.RightBrace
-    Bracket = PrimitiveKind.LeftBracket, PrimitiveKind.RightBracket
-    Angle = PrimitiveKind.LeftAngle, PrimitiveKind.RightAngle
 
 
 @dataclasses.dataclass

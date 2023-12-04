@@ -65,11 +65,17 @@ class Parser[T](ABC):
     def maybe[U](self, target: "Parser[U]") -> "Or[U, None]":
         return target | self.empty()
 
-    def many[U](self, target: "Parser[U]") -> "Repeat[U]":
-        return Repeat(
-            self.tokens,
-            target,
+    def if_then[U](
+        self, if_this: "Parser[t.Any]", then_require: "Parser[U]"
+    ) -> "IfThen[U]":
+        return IfThen(
+            tokens=self.tokens,
+            if_this=if_this,
+            then_require=then_require,
         )
+
+    def many[U](self, target: "Parser[U]") -> "ZeroOrMore[U]":
+        return ZeroOrMore(self.tokens, target)
 
     def into[U](self, transformer: t.Callable[[T], U]) -> "Parser[U]":
         def wrap() -> U:
@@ -79,8 +85,111 @@ class Parser[T](ABC):
 
     def list[U, V](
         self, parser: "Parser[U]", *, separated_by: "Parser[V]"
-    ) -> "List[U, V]":
-        return List(self.tokens, parser, separated_by)
+    ) -> "ListTwo[U, V]":
+        return ListTwo(self.tokens, parser, separated_by)
+
+
+@dataclass
+class OneOrNone[T](Parser[T | None]):
+    parser: Parser[T]
+
+    @t.override
+    def parse(self) -> T | None:
+        self.tokens.stack.push()
+        try:
+            item = self.parser()
+        except errors.ParseException:
+            self.tokens.stack.pop()
+            return None
+        else:
+            self.tokens.stack.drop()
+            return item
+
+
+@dataclass
+class OneOrMore[T](Parser[list[T]]):
+    parser: Parser[T]
+
+    @t.override
+    def parse(self) -> list[T]:
+        first = self.parser()
+        rest = ZeroOrMore(self.tokens, self.parser).parse()
+
+        return [first, *rest]
+
+
+@dataclass
+class ZeroOrMore[T](Parser[list[T]]):
+    parser: Parser[T]
+
+    @t.override
+    def parse(self) -> list[T]:
+        items = list[T]()
+
+        while True:
+            match OneOrNone(self.tokens, self.parser).parse():
+                case None:
+                    break
+                case item:
+                    items.append(item)
+
+        return items
+
+
+@dataclass
+class List[T, U](Parser[list[T]]):
+    parser: Parser[T]
+    separator: Parser[U]
+
+    @t.override
+    def parse(self) -> list[T]:
+        items = list[T]()
+
+        maybe_item = OneOrNone(self.tokens, self.parser).parse()
+        if maybe_item is None:
+            return items
+
+        items.append(maybe_item)
+
+        while True:
+            maybe_item = self.if_then(
+                if_this=self.separator, then_require=self.parser
+            ).parse()
+
+            if maybe_item is None:
+                break
+
+            items.append(maybe_item)
+
+        return items
+
+
+@dataclass
+class ListTwo[T, U](Parser[list[T]]):
+    parser: Parser[T]
+    separator: Parser[U]
+
+    def parse(self) -> list[T]:
+        items = list[T]()
+
+        maybe_item = OneOrNone(self.tokens, self.parser).parse()
+        if maybe_item is None:
+            return items
+
+        items.append(maybe_item)
+
+        while True:
+            maybe_separator = OneOrNone(self.tokens, self.separator).parse()
+            if maybe_separator is None:
+                break
+
+            maybe_item = OneOrNone(self.tokens, self.parser).parse()
+            if maybe_item is None:
+                break
+
+            items.append(maybe_item)
+
+        return items
 
 
 class TerminalParser[T](Parser[T]):
@@ -91,6 +200,39 @@ class TerminalParser[T](Parser[T]):
 class NonTerminalParser[T](Parser[T]):
     def __and__[U](self, other: "Parser[U]") -> "And[T, U]":
         return And(self.tokens, self, other)
+
+
+@dataclass
+class IfThen[T](Parser[T | None]):
+    if_this: Parser[t.Any]
+    then_require: Parser[T]
+
+    @t.override
+    def parse(self) -> T | None:
+        match self.maybe(self.if_this).parse():
+            case None:
+                return None
+            case _:
+                return self.then_require.parse()
+
+    def otherwise[U](self, return_this: t.Callable[[], U]) -> "IfThenElse[T, U]":
+        return IfThenElse(
+            tokens=self.tokens,
+            if_then_parser=self,
+            otherwise=return_this,
+        )
+
+
+@dataclass
+class IfThenElse[T, U](Parser[T | U]):
+    if_then_parser: IfThen[T]
+    otherwise: t.Callable[[], U]
+
+    def parse(self) -> T | U:
+        maybe = self.if_then_parser()
+        if maybe is None:
+            return self.otherwise()
+        return maybe
 
 
 @dataclass
@@ -118,15 +260,11 @@ class Or[T, U](NonTerminalParser[T | U]):
 
     @t.override
     def parse(self) -> T | U:
-        try:
-            return self.this.parse()
-        except errors.ParseException:
-            try:
-                return self.that.parse()
-            except errors.ParseException:
-                ...
+        maybe_this = OneOrNone(self.tokens, self.this).parse()
+        if maybe_this is not None:
+            return maybe_this
 
-            return self.that.parse()
+        return self.that()
 
 
 @dataclass
@@ -221,29 +359,29 @@ class Empty(Parser[None]):
         return None
 
 
-@dataclass
-class List[T, U](Parser[list[T]]):
-    item: Parser[T]
-    separator: Parser[U] | None = None
+# @dataclass
+# class List[T, U](Parser[list[T]]):
+#     item: Parser[T]
+#     separator: Parser[U] | None = None
 
-    def __post_init__(self):
-        if self.separator is None:
-            separator = Empty(self.tokens)
-        else:
-            separator = self.separator
+#     def __post_init__(self):
+#         if self.separator is None:
+#             separator = Empty(self.tokens)
+#         else:
+#             separator = self.separator
 
-        self.list_parser = (self.item | Empty(self.tokens)) & separator.consume_before(
-            self.item
-        ).repeat()
+#         self.list_parser = (self.item | Empty(self.tokens)) & separator.consume_before(
+#             self.item
+#         ).repeat()
 
-    @t.override
-    def parse(self) -> list[T]:
-        head, args = self.list_parser.parse()
+#     @t.override
+#     def parse(self) -> list[T]:
+#         head, args = self.list_parser.parse()
 
-        if head is not None:
-            args.insert(0, head)
+#         if head is not None:
+#             args.insert(0, head)
 
-        return args
+#         return args
 
 
 @dataclass

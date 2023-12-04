@@ -43,6 +43,12 @@ class BinaryOperator(Enum):
     Multiplication = PrimitiveKind.Asterisk
     Division = PrimitiveKind.ForwardSlash
     Exponentiation = PrimitiveKind.Caret
+    Equality = PrimitiveKind.EqualEqual
+
+    GreaterThan = PrimitiveKind.RightAngle
+    LessThan = PrimitiveKind.LeftAngle
+
+    ScopeResolution = PrimitiveKind.ColonColon
 
     def precedence(self) -> int:
         return {
@@ -51,6 +57,10 @@ class BinaryOperator(Enum):
             self.Multiplication: 2,
             self.Division: 2,
             self.Exponentiation: 3,
+            self.GreaterThan: 6,
+            self.LessThan: 6,
+            self.Equality: 7,
+            self.ScopeResolution: 12,
         }[self]
 
     def is_right_associative(self) -> bool:
@@ -60,6 +70,10 @@ class BinaryOperator(Enum):
             self.Multiplication: False,
             self.Division: False,
             self.Exponentiation: True,
+            self.GreaterThan: False,
+            self.LessThan: False,
+            self.Equality: False,
+            self.ScopeResolution: False,
         }[self]
 
     @classmethod
@@ -112,18 +126,6 @@ class PrefixOperator(Enum):
         return isinstance(any, Primitive) and any.kind in cls.values()
 
 
-class PostfixOperator(Enum):
-    Increment = PrimitiveKind.TwoPlus
-
-    @classmethod
-    def values(cls) -> set[PrimitiveKind]:
-        return {member.value for member in cls}
-
-    @classmethod
-    def is_postfix_op(cls, any: t.Any) -> t.TypeGuard[Primitive]:
-        return isinstance(any, Primitive) and any.kind in cls.values()
-
-
 @dataclass
 class BinaryExpression(Node):
     operator: BinaryOperator
@@ -163,16 +165,6 @@ class PrefixExpression(Node):
     @t.override
     def accept(self, visitor: "Visitor") -> None:
         visitor.prefix(self)
-
-
-@dataclass
-class PostfixExpression(Node):
-    operator: PostfixOperator
-    expr: Expression
-
-    @t.override
-    def accept(self, visitor: "Visitor"):
-        visitor.postfix(self)
 
 
 @dataclass
@@ -349,9 +341,24 @@ class TraitDeclaration(Node):
 
 
 @dataclass
+class ContinueStatement(Node):
+    def accept(self, visitor: "Visitor") -> None:
+        raise NotImplementedError()
+
+
+@dataclass
+class BreakStatement(Node):
+    def accept(self, visitor: "Visitor") -> None:
+        raise NotImplementedError()
+
+
+type LoopStatement = Statement | BreakStatement | ContinueStatement
+
+
+@dataclass
 class WhileLoop(Node):
     condition: Expression
-    statements: list[Statement]
+    statements: list[LoopStatement]
 
     @t.override
     def accept(self, visitor: "Visitor"):
@@ -362,7 +369,7 @@ class WhileLoop(Node):
 class ForLoop(Node):
     target: Identifier
     iterator: Expression
-    statements: list[Statement]
+    statements: list[LoopStatement]
 
     @t.override
     def accept(self, visitor: "Visitor"):
@@ -405,18 +412,6 @@ class WhenStatement(Node):
 class ReturnStatement(Node):
     expression: Expression | None
 
-    def accept(self, visitor: "Visitor") -> None:
-        raise NotImplementedError()
-
-
-@dataclass
-class ContinueStatement(Node):
-    def accept(self, visitor: "Visitor") -> None:
-        raise NotImplementedError()
-
-
-@dataclass
-class BreakStatement(Node):
     def accept(self, visitor: "Visitor") -> None:
         raise NotImplementedError()
 
@@ -505,10 +500,6 @@ class Visitor(ABC):
 
     @abstractmethod
     def prefix(self, node: PrefixExpression) -> None:
-        raise NotImplementedError()
-
-    @abstractmethod
-    def postfix(self, node: PostfixExpression) -> None:
         raise NotImplementedError()
 
     @abstractmethod

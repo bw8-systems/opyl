@@ -1,13 +1,20 @@
 import typing as t
+from dataclasses import dataclass
 
 from compile import lex
 from compile import nodes
 from compile import lexemes
-from compile.positioning import Stream
+from compile.positioning import Stream, Span
 from compile.lexemes import KeywordKind as KK
 from compile.lexemes import PrimitiveKind as PK
 from compile import pratt
 from compile import combinators as comb
+
+
+@dataclass
+class Spanned[T]:
+    span: Span
+    item: T
 
 
 class OpalParser(comb.Parser[list[nodes.Declaration]]):
@@ -21,7 +28,11 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         super().__init__(tokens=Stream(tokens))
 
     def parse(self) -> list[nodes.Declaration]:
-        return self.many(self.declaration().after_newlines()).parse()
+        return comb.ListTwo(
+            self.tokens,
+            self.declaration().after_newlines(),
+            separator=self.primitive(PK.NewLine).newlines(),
+        ).parse()
 
     def declaration(self) -> comb.Parser[nodes.Declaration]:
         return (
@@ -41,13 +52,21 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
             | self.when_statement()
             | self.if_statement()
             | self.return_statement()
-            | self.for_statement()
-            | self.while_statement()
+            | self.for_loop()
+            | self.while_loop()
             | self.expression_statement()
         )
 
+    def loop_statement(self) -> comb.Parser[nodes.LoopStatement]:
+        return self.statement() | self.continue_statement() | self.break_statement()
+
     def const_decl(self) -> comb.Parser[nodes.ConstDeclaration]:
-        # const NAME: Type = initializer\n
+        @dataclass
+        class ConstItems:
+            const: lexemes.Keyword
+            ident: nodes.Identifier
+            type: nodes.Type
+            itor: nodes.Expression
 
         return (
             (
@@ -55,32 +74,26 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
                 & self.identifier() >> self.primitive(PK.Colon)
                 & self.type() >> self.primitive(PK.Equal)
                 & self.expression()
-                & self.primitive(PK.NewLine)
             )
+            .into(lambda p: ConstItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("const", lexemes.Keyword),
-                        ("ident", nodes.Identifier),
-                        ("type", nodes.Type),
-                        ("itor", nodes.Expression),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.ConstDeclaration(
-                    span=parsed.const.span + parsed.newline.span,
-                    name=parsed.ident,
-                    type=parsed.type,
-                    initializer=parsed.itor,
+                lambda p: nodes.ConstDeclaration(
+                    span=p.const.span + p.itor.span,
+                    name=p.ident,
+                    type=p.type,
+                    initializer=p.itor,
                 )
             )
         )
 
     def var_decl(self) -> comb.Parser[nodes.VarDeclaration]:
-        # let [mut]? Name: Type = initializer\n
+        @dataclass
+        class VarItems:
+            let: lexemes.Keyword
+            mut: lexemes.Keyword | None
+            ident: nodes.Identifier
+            type: nodes.Type
+            expr: nodes.Expression
 
         return (
             (
@@ -89,67 +102,56 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
                 & self.identifier() >> self.primitive(PK.Colon)
                 & self.type() >> self.primitive(PK.Equal)
                 & self.expression()
-                & self.primitive(PK.NewLine)
             )
+            .into(lambda p: VarItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("let", lexemes.Keyword),
-                        ("mut", lexemes.Keyword | None),
-                        ("ident", nodes.Identifier),
-                        ("type", nodes.Type),
-                        ("expr", nodes.Expression),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.VarDeclaration(
-                    span=parsed.let.span + parsed.newline.span,
-                    name=parsed.ident,
-                    is_mut=bool(parsed.mut),
-                    type=parsed.type,
-                    initializer=parsed.expr,
+                lambda p: nodes.VarDeclaration(
+                    span=p.let.span + p.expr.span,
+                    name=p.ident,
+                    is_mut=bool(p.mut),
+                    type=p.type,
+                    initializer=p.expr,
                 )
             )
         )
 
     def struct_decl(self) -> comb.Parser[nodes.StructDeclaration]:
-        # struct Name {
-        #     [Field]\n*
-        # }\n
+        @dataclass
+        class StructItems:
+            struct: lexemes.Keyword
+            ident: nodes.Identifier
+            fields: list[nodes.Field]
 
         return (
             (
                 self.keyword(KK.Struct)
                 & self.identifier() >> self.primitive(PK.LeftBrace).newlines()
-                & self.list(self.field(), separated_by=self.primitive(PK.NewLine))
+                & comb.ListTwo(
+                    self.tokens, self.field(), separator=self.primitive(PK.NewLine)
+                )
                 >> self.primitive(PK.RightBrace)
-                & self.primitive(PK.NewLine)
             )
+            .into(lambda p: StructItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("ident", nodes.Identifier),
-                        ("fields", list[nodes.Field]),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.StructDeclaration(
-                    span=parsed.kw.span + parsed.newline.span,
-                    name=parsed.ident,
-                    fields=parsed.fields,
+                lambda p: nodes.StructDeclaration(
+                    span=p.struct.span
+                    + (
+                        p.fields[-1].span if len(p.fields) else p.ident.span
+                    ),  # TODO: Span is not correct when there are zero fields.
+                    name=p.ident,
+                    fields=p.fields,
                     functions=[],
                 )
             )
         )
 
     def enum_decl(self) -> comb.Parser[nodes.EnumDeclaration]:
+        @dataclass
+        class EnumItems:
+            enum: lexemes.Keyword
+            ident: nodes.Identifier
+            members: list[nodes.Identifier]
+
         return (
             (
                 self.keyword(KK.Enum)
@@ -159,111 +161,95 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
                 )
                 >> self.maybe(self.primitive(PK.Comma)).newlines()
                 >> self.primitive(PK.RightBrace)
-                & self.primitive(PK.NewLine)
             )
+            .into(lambda p: EnumItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("ident", nodes.Identifier),
-                        ("members", list[nodes.Identifier]),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.EnumDeclaration(
-                    span=parsed.kw.span + parsed.newline.span,
-                    name=parsed.ident,
-                    members=parsed.members,
+                lambda p: nodes.EnumDeclaration(
+                    span=p.enum.span + p.members[-1].span,
+                    name=p.ident,
+                    members=p.members,
                 )
             )
         )
 
     def union_decl(self) -> comb.Parser[nodes.UnionDeclaration]:
+        @dataclass
+        class UnionItems:
+            union: lexemes.Keyword
+            ident: nodes.Identifier
+            types: list[nodes.Type]
+            functions: list[
+                nodes.FunctionDeclaration
+            ] | None  # TODO: "or_else" combinator for defaults
+
         # TODO: Unions should be required to have atleast two types.
         return (
             (
                 self.keyword(KK.Union)
                 & self.identifier() >> self.primitive(PK.Equal)
                 & self.list(self.type(), separated_by=self.primitive(PK.Pipe))
-                & self.maybe(self.block(self.function_decl))
-                & self.primitive(PK.NewLine)
+                & self.if_then(
+                    if_this=self.primitive(PK.LeftBrace),
+                    then_require=self.list(
+                        self.function_decl(), separated_by=self.primitive(PK.NewLine)
+                    )
+                    >> self.primitive(PK.RightBrace),
+                )
             )
+            .into(lambda p: UnionItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("ident", nodes.Identifier),
-                        ("types", list[nodes.Type]),
-                        ("functions", list[nodes.FunctionDeclaration] | None),
-                        ("newline", lexemes.Primitive),
+                lambda p: nodes.UnionDeclaration(
+                    span=p.union.span
+                    + (
+                        p.types[-1].span
+                        if p.functions is None
+                        else p.functions[-1].span
                     ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.UnionDeclaration(
-                    span=parsed.kw.span + parsed.newline.span,
-                    name=parsed.ident,
-                    members=parsed.types,
-                    functions=parsed.functions if parsed.functions is not None else [],
+                    name=p.ident,
+                    members=p.types,
+                    functions=p.functions if p.functions is not None else [],
                 )
             )
         )
 
     def trait_decl(self) -> comb.Parser[nodes.TraitDeclaration]:
+        @dataclass
+        class TraitItems:
+            trait: lexemes.Keyword
+            ident: nodes.Identifier
+            sigs: Spanned[list[nodes.FunctionSignature]]
+
         return (
             (
                 self.keyword(KK.Trait)
                 & self.identifier().newlines()
                 & self.block(self.signature)
-                & self.primitive(PK.NewLine)
             )
+            .into(lambda p: TraitItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("ident", nodes.Identifier),
-                        ("signatures", list[nodes.FunctionSignature]),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.TraitDeclaration(
-                    span=parsed.kw.span + parsed.newline.span,
-                    name=parsed.ident,
-                    functions=parsed.signatures,
+                lambda p: nodes.TraitDeclaration(
+                    span=p.trait.span + p.sigs.span,
+                    name=p.ident,
+                    functions=p.sigs.item,
                 )
             )
         )
 
     def function_decl(self) -> comb.Parser[nodes.FunctionDeclaration]:
+        @dataclass
+        class FunctionItems:
+            sig: nodes.FunctionSignature
+            body: Spanned[list[nodes.Statement]]
+
         return (
-            (
-                self.signature().newlines()
-                & self.block(self.statement)
-                & self.primitive(PK.NewLine)
-            )
+            (self.signature().newlines() & self.block(self.statement))
+            .into(lambda p: FunctionItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("signature", nodes.FunctionSignature),
-                        ("body", list[nodes.Statement]),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.FunctionDeclaration(
-                    span=parsed.signature.span + parsed.newline.span,
-                    name=parsed.signature.name,
-                    signature=parsed.signature,
-                    body=parsed.body,
+                lambda p: nodes.FunctionDeclaration(
+                    span=p.sig.span + p.body.span,
+                    name=p.sig.name,
+                    signature=p.sig,
+                    body=p.body.item,
                 )
             )
         )
@@ -272,205 +258,125 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         return self.expression()
 
     def if_statement(self) -> comb.Parser[nodes.IfStatement]:
-        # if expr { [statement]* } [else { [statement]* }]?
+        @dataclass
+        class IfItems:
+            kw: lexemes.Keyword
+            cond: nodes.Expression
+            if_body: Spanned[list[nodes.Statement]]
+            else_body: Spanned[
+                list[nodes.Statement]
+            ] | None  # TODO: "or_else" combinator for defaults
 
         return (
             (
                 self.keyword(KK.If)
                 & self.expression().newlines()
                 & self.block(self.statement)
-                & self.maybe(self.else_clause())
-                & self.primitive(PK.NewLine)
+                & self.else_block()
             )
+            .into(lambda p: IfItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("expr", nodes.Expression),
-                        ("body", list[nodes.Statement]),
-                        ("else_clause", list[nodes.Statement] | None),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.IfStatement(
-                    span=parsed.kw.span + parsed.newline.span,
-                    if_condition=parsed.expr,
-                    if_statements=parsed.body,
-                    else_statements=parsed.else_clause
-                    if parsed.else_clause is not None
-                    else [],
+                lambda p: nodes.IfStatement(
+                    span=p.kw.span
+                    + (p.else_body.span if p.else_body is not None else p.if_body.span),
+                    if_condition=p.cond,
+                    if_statements=p.if_body.item,
+                    else_statements=p.else_body.item if p.else_body is not None else [],
                 )
             )
         )
 
-    def while_statement(self) -> comb.Parser[nodes.WhileLoop]:
-        # while expr { [statement]* }
+    def while_loop(self) -> comb.Parser[nodes.WhileLoop]:
+        @dataclass
+        class WhileItems:
+            kw: lexemes.Keyword
+            cond: nodes.Expression
+            block: Spanned[list[nodes.LoopStatement]]
 
         return (
             (
                 self.keyword(KK.While)
                 & self.expression().newlines()
-                & self.block(
-                    self.statement
-                )  # TODO: Update to allow break and continue statements. They have been removed from the base statement parser.
-                & self.primitive(PK.NewLine)
+                & self.block(self.loop_statement)
             )
+            .into(lambda p: WhileItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    [
-                        ("kw", lexemes.Keyword),
-                        ("expr", nodes.Expression),
-                        ("block", list[nodes.Statement]),
-                        ("newline", lexemes.Primitive),
-                    ],
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.WhileLoop(
-                    span=parsed.kw.span + parsed.newline.span,
-                    condition=parsed.expr,
-                    statements=parsed.block,
+                lambda p: nodes.WhileLoop(
+                    span=p.kw.span + p.block.span,
+                    condition=p.cond,
+                    statements=p.block.item,
                 )
             )
         )
 
-    def for_statement(self) -> comb.Parser[nodes.ForLoop]:
-        # for name in expr { [statement]* }
+    def for_loop(self) -> comb.Parser[nodes.ForLoop]:
+        @dataclass
+        class ForItems:
+            kw: lexemes.Keyword
+            ident: nodes.Identifier
+            expr: nodes.Expression
+            body: Spanned[list[nodes.LoopStatement]]
 
         return (
             (
                 self.keyword(KK.For)
                 & self.identifier() >> self.keyword(KK.In)
                 & self.expression().newlines()
-                & self.block(
-                    self.statement
-                )  # TODO: Update to allow break and continue statements. They have been removed from the base statement parser.
-                & self.primitive(PK.NewLine)
+                & self.block(self.loop_statement)
             )
+            .into(lambda p: ForItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("ident", nodes.Identifier),
-                        ("expr", nodes.Expression),
-                        ("body", list[nodes.Statement]),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.ForLoop(
-                    span=parsed.kw.span + parsed.newline.span,
-                    target=parsed.ident,
-                    iterator=parsed.expr,
-                    statements=parsed.body,
+                lambda p: nodes.ForLoop(
+                    span=p.kw.span + p.body.span,
+                    target=p.ident,
+                    iterator=p.expr,
+                    statements=p.body.item,
                 )
             )
         )
 
     def when_statement(self) -> comb.Parser[nodes.WhenStatement]:
-        # when expr [as name]? {
-        #     [is type { [statement]* }]*
-        #     [else { [statement]* }]?
-        # }
+        @dataclass
+        class WhenItems:
+            when: lexemes.Keyword
+            expr: nodes.Expression
+            bind: nodes.Identifier | None
+            arms: list[nodes.IsClause]
+            default: Spanned[list[nodes.Statement]] | None
 
         return (
             (
                 self.keyword(KK.When)
                 & self.expression()
-                & self.maybe(self.as_clause()).newlines()
-                >> self.primitive(PK.LeftBrace)
-                & self.many(self.is_clause().after_newlines())
-                & self.maybe(self.else_clause()).after_newlines()
+                & self.as_binding().newlines() >> self.primitive(PK.LeftBrace)
+                & self.list(self.is_arm(), separated_by=self.primitive(PK.NewLine))
+                & self.else_block().after_newlines()
                 >> self.primitive(PK.RightBrace).after_newlines()
-                & self.primitive(PK.NewLine)
             )
+            .into(lambda p: WhenItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("when", lexemes.Keyword),
-                        ("expr", nodes.Expression),
-                        ("as_clause", nodes.Identifier | None),
-                        ("is_clauses", list[nodes.IsClause]),
-                        ("else_clause", list[nodes.Statement] | None),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.WhenStatement(
-                    span=parsed.when.span + parsed.newline.span,
-                    expression=parsed.expr,
-                    target=parsed.as_clause,
-                    is_clauses=parsed.is_clauses,
-                    else_statements=parsed.else_clause
-                    if parsed.else_clause is not None
-                    else [],
+                lambda p: nodes.WhenStatement(
+                    span=p.when.span + Span.default(),  # TODO: "end span" utils
+                    expression=p.expr,
+                    target=p.bind,
+                    is_clauses=p.arms,
+                    else_statements=p.default.item if p.default is not None else [],
                 )
             )
         )
 
     def return_statement(self) -> comb.Parser[nodes.ReturnStatement]:
-        # return expr
-
-        return (
-            (self.keyword(KK.Return) & self.expression() & self.primitive(PK.NewLine))
-            .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("expr", nodes.Expression),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.ReturnStatement(
-                    span=parsed.kw.span + parsed.newline.span, expression=parsed.expr
-                )
-            )
+        return (self.keyword(KK.Return) & self.expression()).into(
+            lambda p: nodes.ReturnStatement(span=p[0].span + p[1].span, expression=p[1])
         )
 
     def continue_statement(self) -> comb.Parser[nodes.ContinueStatement]:
-        # continue
-
-        return (
-            (self.keyword(KK.Continue) & self.primitive(PK.NewLine))
-            .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed", (("kw", lexemes.Keyword), ("newline", lexemes.Primitive))
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.ContinueStatement(
-                    span=parsed.kw.span + parsed.newline.span,
-                )
-            )
+        return self.keyword(KK.Continue).into(
+            lambda p: nodes.ContinueStatement(span=p.span)
         )
 
     def break_statement(self) -> comb.Parser[nodes.BreakStatement]:
-        # break
-
-        return (
-            (self.keyword(KK.Break) & self.primitive(PK.NewLine))
-            .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed", (("kw", lexemes.Keyword), ("newline", lexemes.Primitive))
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.BreakStatement(
-                    span=parsed.kw.span + parsed.newline.span
-                )
-            )
-        )
+        return self.keyword(KK.Break).into(lambda p: nodes.BreakStatement(span=p.span))
 
     def keyword(self, kw: lexemes.KeywordKind) -> comb.KeywordTerminal:
         return comb.KeywordTerminal(self.tokens, kw)
@@ -489,81 +395,56 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
 
     def block[U](
         self, parser_factory: t.Callable[[], comb.Parser[U]]
-    ) -> comb.Parser[list[U]]:
-        # { [items]* }
+    ) -> comb.Parser[Spanned[list[U]]]:
+        return (
+            self.primitive(PK.LeftBrace).newlines()
+            & self.many(self.defer(parser_factory).newlines())
+            & self.primitive(PK.RightBrace)
+        ).into(lambda items: Spanned(span=items[0].span + items[2].span, item=items[1]))
 
-        return self.primitive(PK.LeftBrace).newlines().consume_before(
-            self.many(self.defer(parser_factory).newlines())
-        ) >> self.primitive(PK.RightBrace)
-
-    def is_clause(self) -> comb.Parser[nodes.IsClause]:
-        # is type { [statement]* }
+    def is_arm(self) -> comb.Parser[nodes.IsClause]:
+        @dataclass
+        class IsItems:
+            kw: lexemes.Keyword
+            type: nodes.Type
+            body: Spanned[list[nodes.Statement]]
 
         return (
-            (
-                self.keyword(KK.Is)
-                & self.type().newlines()
-                & self.block(self.statement)
-                & self.primitive(PK.NewLine)
-            )
+            (self.keyword(KK.Is) & self.type().newlines() & self.block(self.statement))
+            .into(lambda p: IsItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("type", nodes.Type),
-                        ("statements", list[nodes.Statement]),
-                        ("newline", lexemes.Primitive),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.IsClause(
-                    span=parsed.kw.span + parsed.newline.span,
-                    target=parsed.type,
-                    statements=parsed.statements,
+                lambda p: nodes.IsClause(
+                    span=p.kw.span + (p.body.span if p.body else p.type.span),
+                    target=p.type,
+                    statements=p.body.item,
                 )
             )
         )
 
-    def as_clause(self) -> comb.Parser[nodes.Identifier]:
-        # as name
+    def as_binding(self) -> comb.IfThen[nodes.Identifier]:
+        # TODO: Why isn't Parser[Identifier | None] valid?
+        return self.if_then(if_this=self.keyword(KK.As), then_require=self.identifier())
 
-        return (
-            (self.keyword(KK.As) & self.identifier())
-            .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed", (("kw", lexemes.Keyword), ("ident", nodes.Identifier))
-                )(*parsed)
-            )
-            .into(lambda parsed: parsed.ident)
+    def else_block(self) -> comb.IfThen[Spanned[list[nodes.Statement]]]:
+        return self.if_then(
+            if_this=self.keyword(KK.Else),
+            then_require=self.block(self.statement),
         )
-
-    def else_clause(self) -> comb.Parser[list[nodes.Statement]]:
-        # else { [statement]* }
-
-        return (
-            self.keyword(KK.Else).newlines().consume_before(self.block(self.statement))
-        )
-
-    def generic_specification(self) -> nodes.GenericParamSpec:
-        ...
 
     def field(self) -> comb.Parser[nodes.Field]:
-        # name: type
+        @dataclass
+        class FieldItems:
+            ident: nodes.Identifier
+            type: nodes.Type
 
         return (
             (self.identifier() >> self.primitive(PK.Colon) & self.type())
+            .into(lambda p: FieldItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed", (("ident", nodes.Identifier), ("type", nodes.Type))
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.Field(
-                    span=parsed.ident.span + parsed.type.span,
-                    name=parsed.ident,
-                    type=parsed.type,
+                lambda p: nodes.Field(
+                    span=p.ident.span + p.type.span,
+                    name=p.ident,
+                    type=p.type,
                 )
             )
         )
@@ -572,47 +453,43 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
         return self.identifier()
 
     def signature(self) -> comb.Parser[nodes.FunctionSignature]:
-        # def name([param_spec]*) -> type
+        @dataclass
+        class SigItems:
+            kw: lexemes.Keyword
+            ident: nodes.Identifier
+            maybe_params: list[nodes.ParamSpec]
+            r_paren: lexemes.Primitive
+            ret_type: nodes.Type | None
 
         return (
             (
                 self.keyword(KK.Def)
                 & self.identifier() >> self.primitive(PK.LeftParenthesis)
-                & self.maybe(
-                    self.list(self.param_spec(), separated_by=self.primitive(PK.Comma))
-                )
+                & self.list(self.param_spec(), separated_by=self.primitive(PK.Comma))
                 & self.primitive(PK.RightParenthesis)
-                & self.maybe(self.primitive(PK.RightArrow).consume_before(self.type()))
+                & self.if_then(
+                    if_this=self.primitive(PK.RightArrow), then_require=self.type()
+                )
             )
+            .into(lambda p: SigItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("kw", lexemes.Keyword),
-                        ("ident", nodes.Identifier),
-                        ("maybe_params", list[nodes.ParamSpec] | None),
-                        ("r_paren", lexemes.Primitive),
-                        ("ret_type", nodes.Type | None),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.FunctionSignature(
-                    span=parsed.kw.span
-                    + (
-                        parsed.ret_type
-                        if parsed.ret_type is not None
-                        else parsed.r_paren
-                    ).span,
-                    name=parsed.ident,
-                    params=[] if parsed.maybe_params is None else parsed.maybe_params,
-                    return_type=parsed.ret_type,
+                lambda p: nodes.FunctionSignature(
+                    span=p.kw.span
+                    + (p.ret_type if p.ret_type is not None else p.r_paren).span,
+                    name=p.ident,
+                    params=p.maybe_params,
+                    return_type=p.ret_type,
                 )
             )
         )
 
     def param_spec(self) -> comb.Parser[nodes.ParamSpec]:
-        # [anon]? name: [mut]? type
+        @dataclass
+        class ParamSpecItems:
+            maybe_anon: lexemes.Keyword | None
+            ident: nodes.Identifier
+            maybe_mut: lexemes.Keyword | None
+            type: nodes.Type
 
         return (
             (
@@ -621,27 +498,15 @@ class OpalParser(comb.Parser[list[nodes.Declaration]]):
                 & self.maybe(self.keyword(KK.Mut))
                 & self.type()
             )
+            .into(lambda p: ParamSpecItems(*p))
             .into(
-                lambda parsed: t.NamedTuple(
-                    "Parsed",
-                    (
-                        ("maybe_anon", lexemes.Keyword | None),
-                        ("ident", nodes.Identifier),
-                        ("maybe_mut", lexemes.Keyword | None),
-                        ("type", nodes.Type),
-                    ),
-                )(*parsed)
-            )
-            .into(
-                lambda parsed: nodes.ParamSpec(
-                    span=(
-                        parsed.ident if parsed.maybe_anon is None else parsed.maybe_anon
-                    ).span
-                    + parsed.type.span,
-                    is_anon=bool(parsed.maybe_anon),
-                    ident=parsed.ident,
-                    is_mut=not bool(parsed.maybe_mut),
-                    type=parsed.type,
+                lambda p: nodes.ParamSpec(
+                    span=(p.ident if p.maybe_anon is None else p.maybe_anon).span
+                    + p.type.span,
+                    is_anon=bool(p.maybe_anon),
+                    ident=p.ident,
+                    is_mut=not bool(p.maybe_mut),
+                    type=p.type,
                 )
             )
         )
