@@ -96,6 +96,12 @@ class Stack:
         self.index = self.drop()
 
 
+@dataclasses.dataclass
+class Marker[Offset]:
+    offset: Offset
+    err_count: int
+
+
 # TODO: Combine with TextStream class
 class Stream[T]:
     def __init__(self, stream: t.Sequence[T]):

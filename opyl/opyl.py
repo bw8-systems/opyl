@@ -1,6 +1,9 @@
 from pprint import pprint
 from compile.parse import OpalParser
 
+from compile import chumsky
+
+exit()
 OpalParser("name: Type").field().parse()
 OpalParser("name: Type").param_spec().parse()
 OpalParser("anon name: Type").param_spec().parse()
