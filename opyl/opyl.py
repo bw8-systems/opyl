@@ -1,42 +1,25 @@
+from compile import parse
+from compile import lex
+from compile import lexemes
+from compile.combinators import TokenStream
+from compile import combinators as comb
+from compile.lexemes import KeywordKind as KK
+
 from pprint import pprint
-from compile.parse import OpalParser
 
-from compile import chumsky
+source = "const ident: Type = expr"
+source = "let mut ident: Type = expr"
+source = "anon ident: mut Type"
+source = "def ident(anon ident: mut Type)"
+source = "enum Color { Red, Green, Blue }"
+source = "union Color = Hsv"
+source = "if expr { ident\n ident }"
+tokens = lex.tokenize(source)
+tokens = list(filter(lambda token: not isinstance(token, lexemes.Whitespace), tokens))
 
-exit()
-OpalParser("name: Type").field().parse()
-OpalParser("name: Type").param_spec().parse()
-OpalParser("anon name: Type").param_spec().parse()
-OpalParser("name: mut Type").param_spec().parse()
-OpalParser("anon name: mut Type").param_spec().parse()
-OpalParser("def foo()").signature().parse()
-OpalParser("def foo(param: Type)").signature().parse()
-OpalParser("def foo(param: Type, name: Opal)").signature().parse()
-OpalParser("def foo(param: Type, name: Opal) -> Bar").signature().parse()
-OpalParser("Foo").type().parse()
-OpalParser("const FOO: Foo = foo").const_decl().parse()
-OpalParser("let integer: Integer = 5").var_decl().parse()
-OpalParser("let mut integer: Integer = 5").var_decl().parse()
-OpalParser("when foo {}").when_statement().parse()
-OpalParser("when foo {is Type {}}").when_statement().parse()
-OpalParser("when foo as f {}").when_statement().parse()
-OpalParser("5").expression_statement().parse()
-OpalParser("foo").expression_statement().parse()
-OpalParser("5 + 2").expression_statement().parse()
-OpalParser("is Type {}").is_arm().parse()
-OpalParser("else {}").else_block().parse()
-OpalParser("for idx in iter {}").for_loop().parse()
-OpalParser("while expr {}").while_loop().parse()
-OpalParser("struct Span {foo: Foo}").parse()
+stream = TokenStream(tokens)
 
-source = """
-def main(args: Arguments) -> ExitStatus {
-    for i in Range(10) {
-        print(fibonacci(i))
-    }
-    return ExitStatus::Success
-}
-"""
+# pprint(tokens)
 
-parsed = OpalParser(source).parse()
-pprint(parsed)
+result = parse.if_stmt.parse(stream)
+pprint(result)

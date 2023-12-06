@@ -1,11 +1,8 @@
-import typing as t
 import contextlib
-import dataclasses
-
-from compile import errors
+from dataclasses import dataclass
 
 
-@dataclasses.dataclass
+@dataclass
 class TextPosition:
     absolute: int = 0
     line: int = 0
@@ -30,7 +27,7 @@ class TextPosition:
         return TextPosition(0, 0, 0)
 
 
-@dataclasses.dataclass
+@dataclass
 class Span:
     start: TextPosition
     stop: TextPosition
@@ -44,6 +41,12 @@ class Span:
     @staticmethod
     def default() -> "Span":
         return Span(start=TextPosition.default(), stop=TextPosition.default())
+
+
+@dataclass
+class Spanned[T]:
+    item: T
+    span: Span
 
 
 class TextStream:
@@ -76,72 +79,21 @@ class TextStream:
         return self.text[self.index.absolute :].startswith(pattern)
 
 
-@dataclasses.dataclass
-class Stack:
+@dataclass
+class Stream[T]:
+    tokens: list[T]
     index: int = 0
 
-    def __post_init__(self):
-        self.stack = list[int]()
+    def save(self) -> int:
+        return self.index
 
-    def push(self):
-        self.stack.append(self.index)
+    def rewind(self, index: int):
+        self.index = index
 
-    def drop(self) -> int:
-        try:
-            return self.stack.pop()
-        except IndexError:
-            raise RuntimeError  # TODO: What kind of error is this?
-
-    def pop(self):
-        self.index = self.drop()
-
-
-@dataclasses.dataclass
-class Marker[Offset]:
-    offset: Offset
-    err_count: int
-
-
-# TODO: Combine with TextStream class
-class Stream[T]:
-    def __init__(self, stream: t.Sequence[T]):
-        self.stack = Stack()
-        self.stream = stream
-
-    def __len__(self) -> int:
-        return len(self.stream[self.stack.index :])
-
-    def peek(self) -> T | None:
-        try:
-            return self.stream[self.stack.index]
-        except IndexError:
+    def next(self) -> T | None:
+        if self.index >= len(self.tokens):
             return None
 
-    def increment(self) -> None:
-        self.stack.index += 1
-
-    def next(self) -> T:
-        maybe = self.peek()
-        if maybe is None:
-            raise errors.UnexpectedEOF()
-
-        # Pyright has narrowed from T | None to T via conditional above.
-        # Renaming for semantic clarity.
-        peeked = maybe
-
-        self.increment()
-        return peeked
-
-    def remaining(self) -> list[T]:
-        return list(self.stream[self.stack.index :])
-
-    def advance_by(self, count: int) -> list[T]:
-        consumed = list[T]()
-        for _ in range(count):
-            consumed.append(self.next())
-
-        return consumed
-
-    def advance(self) -> None:
-        # raise Exception()
-        self.advance_by(1)
+        item = self.tokens[self.index]
+        self.index += 1
+        return item

@@ -201,6 +201,10 @@ class IntegerLiteral(Node):
         visitor.integer(self)
 
 
+class InferredType:
+    ...
+
+
 type Type = Identifier
 
 
@@ -296,7 +300,7 @@ class ConstDeclaration(Node):
 class VarDeclaration(Node):
     name: Identifier
     is_mut: bool
-    type: Type  # TODO: Using strings here may be bad idea.
+    type: Type | None
     initializer: Expression
 
     @t.override
