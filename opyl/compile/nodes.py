@@ -4,13 +4,10 @@ from enum import Enum
 from abc import ABC, abstractmethod
 
 from compile.lexemes import PrimitiveKind, Primitive, Token
-from compile.positioning import Span
 
 
 @dataclass
 class Node(ABC):
-    span: Span
-
     @abstractmethod
     def accept(self, visitor: "Visitor") -> None:
         raise NotImplementedError()

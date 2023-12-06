@@ -22,11 +22,7 @@ expr = ident.map(lambda item: t.cast(nodes.Expression, item))
 field = (
     ident.then_ignore(just(PK.Colon))
     .then(type)
-    .map_with_span(
-        lambda spanned: nodes.Field(
-            span=spanned.span, name=spanned.item[0], type=spanned.item[1]
-        )
-    )
+    .map(lambda items: nodes.Field(name=items[0], type=items[1]))
 )
 
 const_decl = (
@@ -39,12 +35,11 @@ const_decl = (
         .ignore_then(expr)
         .expect("const declaration requires initializer after type")
     )
-    .map_with_span(
-        lambda spanned: nodes.ConstDeclaration(
-            span=spanned.span,
-            name=spanned.item[0],
-            type=spanned.item[1],
-            initializer=spanned.item[2],
+    .map(
+        lambda items: nodes.ConstDeclaration(
+            name=items[0],
+            type=items[1],
+            initializer=items[2],
         )
     )
 )
@@ -59,13 +54,12 @@ let_decl = (
         .ignore_then(expr)
         .expect("expected required initializer after variable declaration")
     )
-    .map_with_span(
-        lambda spanned: nodes.VarDeclaration(
-            span=spanned.span,
-            name=spanned.item[1],
-            is_mut=spanned.item[0],
-            type=spanned.item[2],
-            initializer=spanned.item[3],
+    .map(
+        lambda items: nodes.VarDeclaration(
+            name=items[1],
+            is_mut=items[0],
+            type=items[2],
+            initializer=items[3],
         )
     )
 )
@@ -83,13 +77,12 @@ param_spec = (
         .then(type)
         .expect("expected parameter type")
     )
-    .map_with_span(
-        lambda spanned: nodes.ParamSpec(
-            span=spanned.span,
-            is_anon=spanned.item[0][0],
-            ident=spanned.item[0][1],
-            is_mut=spanned.item[1][0],
-            type=spanned.item[1][1],
+    .map(
+        lambda items: nodes.ParamSpec(
+            is_anon=items[0][0],
+            ident=items[0][1],
+            is_mut=items[1][0],
+            type=items[1][1],
         )
     )
 )
@@ -99,11 +92,10 @@ func_sig = (
     .ignore_then(ident)
     .then(parens(param_spec.separated_by(just(PK.Comma)).allow_trailing()))
     # .then(just(PK.RightArrow).ignore_then(type).or_not())  # TODO: Figure out "if then" optional parsing
-    .map_with_span(
-        lambda spanned: nodes.FunctionSignature(
-            span=spanned.span,
-            name=spanned.item[0],
-            params=spanned.item[1],
+    .map(
+        lambda items: nodes.FunctionSignature(
+            name=items[0],
+            params=items[1],
             return_type=None,  # spanned.item[2],
         )
     )
@@ -113,42 +105,34 @@ func_sig = (
 class Statement(Parser[nodes.Statement]):
     @t.override
     def parse(self, input: TokenStream) -> ParseResult[nodes.Statement]:
-        return (
-            return_stmt
-            | if_stmt
-            | for_loop
-            | while_loop
-            | when_stmt
-            | let_decl
-            | const_decl
-            | expr
-        ).parse(input)
+        ...
+        # return (
+        #     return_stmt
+        #     | if_stmt
+        #     | for_loop
+        #     | while_loop
+        #     | when_stmt
+        #     | let_decl
+        #     | const_decl
+        #     | expr
+        # ).parse(input)
 
 
 stmt = Statement()
 
-break_stmt = just(KK.Break).map_with_span(
-    lambda spanned: nodes.BreakStatement(span=spanned.span)
-)
-continue_stmt = just(KK.Continue).map_with_span(
-    lambda spanned: nodes.ContinueStatement(span=spanned.span)
-)
+break_stmt = just(KK.Break).map(lambda _: nodes.BreakStatement())
+continue_stmt = just(KK.Continue).map(lambda _: nodes.ContinueStatement())
 return_stmt = (
     just(KK.Return)
     .ignore_then(expr)
-    .map_with_span(
-        lambda spanned: nodes.ReturnStatement(
-            span=spanned.span, expression=spanned.item
-        )
-    )
+    .map(lambda item: nodes.ReturnStatement(expression=item))
 )
 
-func_decl = func_sig.then(block(lines(stmt))).map_with_span(
-    lambda spanned: nodes.FunctionDeclaration(
-        span=spanned.span,
-        name=spanned.item[0].name,
-        signature=spanned.item[0],
-        body=spanned.item[1],
+func_decl = func_sig.then(block(lines(stmt))).map(
+    lambda items: nodes.FunctionDeclaration(
+        name=items[0].name,
+        signature=items[0],
+        body=items[1],
     )
 )
 
@@ -156,11 +140,10 @@ struct_decl = (
     just(KK.Struct)
     .ignore_then(ident)
     .then(block(lines(field).at_least(1)))
-    .map_with_span(
-        lambda spanned: nodes.StructDeclaration(
-            span=spanned.span,
-            name=spanned.item[0],
-            fields=spanned.item[1],
+    .map(
+        lambda items: nodes.StructDeclaration(
+            name=items[0],
+            fields=items[1],
             functions=[],  # TODO
         )
     )
@@ -170,11 +153,8 @@ enum_decl = (
     just(KK.Enum)
     .ignore_then(ident)
     .then(block(ident.separated_by(just(PK.Comma)).allow_trailing().at_least(1)))
-    .map_with_span(
-        lambda spanned: nodes.EnumDeclaration(
-            span=spanned.span, name=spanned.item[0], members=spanned.item[1]
-        )
-    )
+    .map(lambda items: nodes.EnumDeclaration(name=items[0], members=items[1]))
+    .spanned()
 )
 
 union_decl = (
@@ -183,11 +163,10 @@ union_decl = (
     .then_ignore(just(PK.Equal))
     .then(type.separated_by(just(PK.Pipe)).at_least(1))
     .then(block(lines(func_decl)).or_not().map(lambda _decls: []))
-    .map_with_span(
-        lambda spanned: nodes.UnionDeclaration(
-            span=spanned.span,
-            name=spanned.item[0],
-            members=spanned.item[1],
+    .map(
+        lambda items: nodes.UnionDeclaration(
+            name=items[0],
+            members=items[1],
             functions=[],  # spanned.item[2],  # TODO: wtf
         )
     )
@@ -197,11 +176,7 @@ trait_decl = (
     just(KK.Trait)
     .ignore_then(ident)
     .then(block(lines(func_decl)).or_not().map(lambda _decls: []))
-    .map_with_span(
-        lambda spanned: nodes.TraitDeclaration(
-            span=spanned.span, name=spanned.item[0], functions=spanned.item[1]
-        )
-    )
+    .map(lambda items: nodes.TraitDeclaration(*items))
 )
 
 
@@ -210,14 +185,7 @@ if_stmt = (
     .ignore_then(expr.expect("expected conditional expression after 'if' keyword"))
     .then(block(lines(stmt)).map(lambda _stmts: []))
     .then(just(KK.Else).or_not().ignore_then(block(lines(stmt)).map(lambda _stmts: [])))
-    .map_with_span(
-        lambda spanned: nodes.IfStatement(
-            span=spanned.span,
-            if_condition=spanned.item[0],
-            if_statements=spanned.item[1],
-            else_statements=spanned.item[2],
-        )
-    )
+    .map(lambda items: nodes.IfStatement(*items))
 )
 
 loop_stmt = stmt | break_stmt | continue_stmt
@@ -226,11 +194,7 @@ while_loop = (
     just(KK.While)
     .ignore_then(expr)
     .then(block(lines(loop_stmt)))
-    .map_with_span(
-        lambda spanned: nodes.WhileLoop(
-            span=spanned.span, condition=spanned.item[0], statements=spanned.item[1]
-        )
-    )
+    .map(lambda items: nodes.WhileLoop(condition=items[0], statements=items[1]))
 )
 
 for_loop = (
@@ -239,25 +203,14 @@ for_loop = (
     .then_ignore(just(KK.In))
     .then(expr)
     .then(block(lines(loop_stmt)))
-    .map_with_span(
-        lambda spanned: nodes.ForLoop(
-            span=spanned.span,
-            target=spanned.item[0],
-            iterator=spanned.item[1],
-            statements=spanned.item[2],
-        )
-    )
+    .map(lambda items: nodes.ForLoop(*items))
 )
 
 is_arm = (
     just(KK.Is)
     .ignore_then(type)
     .then(block(lines(stmt)))
-    .map_with_span(
-        lambda spanned: nodes.IsClause(
-            span=spanned.span, target=spanned.item[0], statements=spanned.item[1]
-        )
-    )
+    .map(lambda items: nodes.IsClause(*items))
 )
 
 when_stmt = (  # Definitely needs closer look at the optional parts
@@ -270,17 +223,16 @@ when_stmt = (  # Definitely needs closer look at the optional parts
                 just(KK.Else)
                 .ignore_then(block(lines(stmt)))
                 .or_not()
-                .map(lambda stmts: [])  # TODO: testing only
+                .map(lambda stmts: list[nodes.Statement]())  # TODO: testing only
             )
         )
     )
-    .map_with_span(
-        lambda spanned: nodes.WhenStatement(
-            span=spanned.span,
-            expression=spanned.item[0],
-            target=spanned.item[1],
-            is_clauses=spanned.item[2][0],
-            else_statements=spanned.item[2][1],
+    .map(
+        lambda items: nodes.WhenStatement(
+            expression=items[0],
+            target=items[1],
+            is_clauses=items[2][0],
+            else_statements=items[2][1],
         )
     )
 )

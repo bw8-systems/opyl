@@ -76,10 +76,8 @@ class Parser[T](ABC):
     def map[U](self, func: t.Callable[[T], U]) -> "Map[T, U]":
         return Map(self, func)
 
-    def map_with_span[U](
-        self, func: t.Callable[[Spanned[T]], U]
-    ) -> "Map[Spanned[T], U]":
-        return Map(parser=self.spanned(), func=func)
+    def map_with_span[U](self, func: t.Callable[[T], U]) -> "ToSpan[U]":
+        return self.map(func).spanned()
 
 
 class NonChainingParser[T](Parser[T]):
@@ -324,7 +322,7 @@ class IdentifierTerminal(NonChainingParser[nodes.Identifier]):
             return NoMatch()
 
         if isinstance(maybe_next, lexemes.Identifier):
-            return nodes.Identifier(maybe_next.span, maybe_next.identifier)
+            return nodes.Identifier(maybe_next.identifier)
 
         return NoMatch()
 

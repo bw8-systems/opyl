@@ -11,9 +11,9 @@ source = "const ident: Type = expr"
 source = "let mut ident: Type = expr"
 source = "anon ident: mut Type"
 source = "def ident(anon ident: mut Type)"
-source = "enum Color { Red, Green, Blue }"
-source = "union Color = Hsv"
-source = "if expr { ident\n ident }"
+source = "enum Color { Red, Green, Blue, }"
+# source = "union Color = Hsv"
+# source = "if expr { ident\n ident }"
 tokens = lex.tokenize(source)
 tokens = list(filter(lambda token: not isinstance(token, lexemes.Whitespace), tokens))
 
@@ -21,5 +21,5 @@ stream = TokenStream(tokens)
 
 # pprint(tokens)
 
-result = parse.if_stmt.parse(stream)
+result = parse.enum_decl.parse(stream)
 pprint(result)
