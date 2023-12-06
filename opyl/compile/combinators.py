@@ -76,6 +76,11 @@ class Parser[T](ABC):
     def map[U](self, func: t.Callable[[T], U]) -> "Map[T, U]":
         return Map(self, func)
 
+    def map_with_span[U](
+        self, func: t.Callable[[Spanned[T]], U]
+    ) -> "Map[Spanned[T], U]":
+        return Map(parser=self.spanned(), func=func)
+
 
 class NonChainingParser[T](Parser[T]):
     def then[U](self, other: Parser[U]) -> "Then[T, U]":
