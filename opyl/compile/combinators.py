@@ -5,7 +5,13 @@ import copy
 
 from compile.positioning import Stream, Spanned, Span
 from compile import lexemes
-from compile.lexemes import Token, Primitive, PrimitiveKind, Keyword, KeywordKind
+from compile.lexemes import (
+    Token,
+    Primitive,
+    PrimitiveKind,
+    Keyword,
+    KeywordKind,
+)
 from compile import nodes
 
 
@@ -17,29 +23,36 @@ class TokenStream(Stream[Token]):
         return start + stop
 
 
-class ParseException(Exception):
-    ...
+class Parse:
+    type Result[T] = Match[T] | NoMatch | Errors
 
+    @dataclass
+    class Match[T]:
+        item: T
 
-class NoMatch(ParseException):
-    ...
+    class NoMatch:
+        def __eq__(self, other: t.Any) -> bool:
+            return isinstance(other, self.__class__)
 
+    @dataclass
+    class Errors:
+        errors: list[tuple[int, str]]
 
-@dataclass
-class ParseError(ParseException):
-    offset: int
-    message: str
+        @classmethod
+        def new(cls, offset: int, message: str) -> t.Self:
+            return cls(errors=[(offset, message)])
 
-
-type ParseResult[T] = T | NoMatch | ParseError
+        def with_new(self, offset: int, message: str) -> t.Self:
+            self.errors.append((offset, message))
+            return self
 
 
 class Parser[T](ABC):
     @abstractmethod
-    def parse(self, input: TokenStream) -> ParseResult[T]:
+    def parse(self, input: TokenStream) -> Parse.Result[T]:
         ...
 
-    def __call__(self, input: TokenStream) -> ParseResult[T]:
+    def __call__(self, input: TokenStream) -> Parse.Result[T]:
         return self.parse(input)
 
     def spanned(self) -> "ToSpan[T]":
@@ -50,6 +63,9 @@ class Parser[T](ABC):
 
     def __or__[U](self, other: "Parser[U]") -> "Alternative[T, U]":
         return self.alternative(other)
+
+    def then[U](self, other: "Parser[U]") -> "Then[T, U]":
+        return Then(self, other)
 
     def ignore_then[U](self, other: "Parser[U]") -> "IgnoreThen[T, U]":
         return IgnoreThen(self, other)
@@ -80,52 +96,62 @@ class Parser[T](ABC):
         return self.map(func).spanned()
 
 
-class NonChainingParser[T](Parser[T]):
-    def then[U](self, other: Parser[U]) -> "Then[T, U]":
-        return Then(self, other)
-
-
 @dataclass
-class ToSpan[T](NonChainingParser[Spanned[T]]):
+class ToSpan[T](Parser[Spanned[T]]):
     parser: Parser[T]
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[Spanned[T]]:
+    def parse(self, input: TokenStream) -> Parse.Result[Spanned[T]]:
         before = input.save()
 
-        match self.parser(input):
-            case NoMatch() | ParseError() as err:
-                return err
-            case item:
-                return Spanned(item, input.span_since(before))
+        result = self.parser(input)
+        if isinstance(result, Parse.Match):
+            return Parse.Match(Spanned(result.item, input.span_since(before)))
+
+        return result
 
 
 @dataclass
-class Expect[T](NonChainingParser[T]):
+class Expect[T](Parser[T]):
     parser: Parser[T]
     message: str
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[T]:
-        match self.parser(input):
-            case NoMatch() | ParseError():
-                return ParseError(offset=input.index, message=self.message)
-            case item:
-                return item
+    def parse(self, input: TokenStream) -> Parse.Result[T]:
+        saved = input.save()
+
+        result = self.parser(input)
+        if not isinstance(result, Parse.Match):
+            if isinstance(result, Parse.NoMatch):
+                return Parse.Errors.new(offset=saved, message=self.message)
+
+            return result.with_new(offset=saved, message=self.message)
+
+        return result
 
 
 @dataclass
-class Alternative[T, U](NonChainingParser[T | U]):
+class Alternative[T, U](Parser[T | U]):
     first_choice: Parser[T]
     second_choice: Parser[U]
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[T | U]:
+    def parse(self, input: TokenStream) -> Parse.Result[T | U]:
         match self.first_choice(input):
-            case NoMatch() | ParseError():
-                return self.second_choice(input)
-            case item:
-                return item
+            case Parse.Errors() as errors:
+                return errors
+            case Parse.NoMatch():
+                ...
+            case Parse.Match(item):
+                return Parse.Match(item)
+
+        match self.second_choice(input):
+            case Parse.Errors() as errors:
+                return errors
+            case Parse.NoMatch():
+                return Parse.NoMatch()
+            case Parse.Match(item):
+                return Parse.Match(item)
 
 
 @dataclass
@@ -134,80 +160,60 @@ class Then[T, U](Parser[tuple[T, U]]):
     second: Parser[U]
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[tuple[T, U]]:
-        first_result = self.first(input)
-        if isinstance(first_result, (NoMatch, ParseError)):
-            return first_result
+    def parse(self, input: TokenStream) -> Parse.Result[tuple[T, U]]:
+        match self.first(input):
+            case Parse.Match(item):
+                first_item = item
+            case errors_or_none:
+                return errors_or_none
 
-        second_result = self.second(input)
-        if isinstance(second_result, (NoMatch, ParseError)):
-            return second_result
+        match self.second(input):
+            case Parse.Match(item):
+                second_item = item
+            case errors_or_none:
+                return errors_or_none
 
-        return first_result, second_result
-
-    def then[V](self, other: Parser[V]) -> "Chain[T, U, V]":
-        return Chain(self, other)
-
-
-@dataclass
-class Chain[*Ts, T](Parser[tuple[*Ts, T]]):
-    all_but_last: Parser[tuple[*Ts]]
-    last: Parser[T]
-
-    @t.override
-    def parse(self, input: TokenStream) -> ParseResult[tuple[*Ts, T]]:
-        first_result = self.all_but_last(input)
-        if isinstance(first_result, (NoMatch, ParseError)):
-            return first_result
-
-        second_result = self.last(input)
-        if isinstance(second_result, (NoMatch, ParseError)):
-            return second_result
-
-        return *first_result, second_result
-
-    def then[U](self, other: Parser[U]) -> "Chain[*Ts, T, U]":
-        return Chain(self, other)
+        return Parse.Match((first_item, second_item))
 
 
 @dataclass
-class IgnoreThen[T, U](NonChainingParser[U]):
+class IgnoreThen[T, U](Parser[U]):
     first: Parser[T]
     second: Parser[U]
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[U]:
-        first_result = self.first(input)
-        if isinstance(first_result, (NoMatch, ParseError)):
-            return first_result
+    def parse(self, input: TokenStream) -> Parse.Result[U]:
+        match self.first(input):
+            case Parse.Match():
+                ...
+            case errors_or_none:
+                return errors_or_none
 
-        second_result = self.second(input)
-        if isinstance(second_result, (NoMatch, ParseError)):
-            return second_result
-
-        return second_result
+        return self.second(input)
 
 
 @dataclass
-class ThenIgnore[T, U](NonChainingParser[T]):
+class ThenIgnore[T, U](Parser[T]):
     first: Parser[T]
     second: Parser[U]
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[T]:
-        first_result = self.first(input)
-        if isinstance(first_result, (NoMatch, ParseError)):
-            return first_result
+    def parse(self, input: TokenStream) -> Parse.Result[T]:
+        match self.first(input):
+            case Parse.Match(item):
+                first_item = item
+            case errors_or_none:
+                return errors_or_none
 
-        second_result = self.second(input)
-        if isinstance(second_result, (NoMatch, ParseError)):
-            return second_result
-
-        return first_result
+        match self.second(input):
+            case Parse.Match():
+                return Parse.Match(first_item)
+            case errors_or_none:
+                return errors_or_none
 
 
 @dataclass
-class SeparatedBy[T, U](NonChainingParser[list[T]]):
+class SeparatedBy[T, U](Parser[list[T]]):
     parser: Parser[T]
     separator: Parser[U]
 
@@ -216,33 +222,33 @@ class SeparatedBy[T, U](NonChainingParser[list[T]]):
     _at_least: int = 0
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[list[T]]:
+    def parse(self, input: TokenStream) -> Parse.Result[list[T]]:
         items = list[T]()
 
         while True:
             before = input.save()
 
             match self.separator(input):
-                case NoMatch() | ParseError() if len(items) == 0:
+                case Parse.NoMatch() | Parse.Errors() if len(items) == 0:
                     input.rewind(before)
-                case NoMatch() | ParseError() if len(items) != 0:
+                case Parse.NoMatch() | Parse.Errors() if len(items) != 0:
                     input.rewind(before)
-                    if len(items) <= self._at_least:
-                        return NoMatch()
-                    return items
+                    if len(items) < self._at_least:
+                        return Parse.NoMatch()
+                    return Parse.Match(items)
                 case _:
                     if (not self._allow_leading) and (len(items) == 0):
-                        return NoMatch()
+                        return Parse.NoMatch()
 
             before = input.save()
 
             match self.parser(input):
-                case (NoMatch() | ParseError()) as err:
+                case (Parse.NoMatch() | Parse.Errors()) as err:
                     if self._allow_trailing:
                         input.rewind(before)
-                        return items
+                        return Parse.Match(items)
                     return err
-                case item:
+                case Parse.Match(item):
                     items.append(item)
 
     def allow_leading(self) -> t.Self:
@@ -262,104 +268,102 @@ class SeparatedBy[T, U](NonChainingParser[list[T]]):
 
 
 @dataclass
-class DelimitedBy[T, U, V](NonChainingParser[T]):
+class DelimitedBy[T, U, V](Parser[T]):
     parser: Parser[T]
     start: Parser[U]
     end: Parser[V]
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[T]:
-        start_result = self.start(input)
-        if isinstance(start_result, (NoMatch, ParseError)):
-            return start_result
-
-        parsed_result = self.parser(input)
-        if isinstance(parsed_result, (NoMatch, ParseError)):
-            return parsed_result
-
-        end_result = self.end(input)
-        if isinstance(end_result, (NoMatch, ParseError)):
-            return end_result
-
-        return parsed_result
+    def parse(self, input: TokenStream) -> Parse.Result[T]:
+        return (
+            self.start.expect("Expected starting delimiter.")
+            .ignore_then(self.parser)
+            .then_ignore(self.end.expect("Expected ending delimiter"))
+            .parse(input)
+        )
 
 
 @dataclass
-class OrNot[T](NonChainingParser[T | None]):
+class OrNot[T](Parser[T | None]):
     parser: Parser[T]
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[T | None]:
+    def parse(self, input: TokenStream) -> Parse.Result[T | None]:
         saved = input.save()
+
         match self.parser(input):
-            case NoMatch() | ParseError():
+            case Parse.NoMatch():
                 input.rewind(saved)
-                return None
-            case item:
-                return item
+                return Parse.Match(None)
+            case Parse.Errors() as errors:
+                return errors
+            case Parse.Match(item):
+                return Parse.Match(item)
 
 
 @dataclass
-class Map[T, U](NonChainingParser[U]):
+class Map[T, U](Parser[U]):
     parser: Parser[T]
     func: t.Callable[[T], U]
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[U]:
+    def parse(self, input: TokenStream) -> Parse.Result[U]:
         match self.parser.parse(input):
-            case (NoMatch() | ParseError()) as err:
+            case (Parse.NoMatch() | Parse.Errors()) as err:
                 return err
-            case item:
-                return self.func(item)
+            case Parse.Match(item):
+                return Parse.Match(self.func(item))
 
 
-class IdentifierTerminal(NonChainingParser[nodes.Identifier]):
+class IdentifierTerminal(Parser[nodes.Identifier]):
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[nodes.Identifier]:
-        maybe_next = input.next()
-
-        if maybe_next is None:
-            return NoMatch()
-
-        if isinstance(maybe_next, lexemes.Identifier):
-            return nodes.Identifier(maybe_next.identifier)
-
-        return NoMatch()
+    def parse(self, input: TokenStream) -> Parse.Result[nodes.Identifier]:
+        match input.next():
+            case lexemes.Identifier() as ident:
+                return Parse.Match(nodes.Identifier(name=ident.identifier))
+            case _:
+                return Parse.NoMatch()
 
 
 @dataclass
-class PrimitiveTerminal(NonChainingParser[Primitive]):
+class IntegerLiteralTerminal(Parser[nodes.IntegerLiteral]):
+    @t.override
+    def parse(self, input: TokenStream) -> Parse.Result[nodes.IntegerLiteral]:
+        match input.next():
+            case lexemes.IntegerLiteral() as int_lit:
+                return Parse.Match(nodes.IntegerLiteral(integer=int_lit.integer))
+            case _:
+                return Parse.NoMatch()
+
+
+@dataclass
+class PrimitiveTerminal(Parser[Primitive]):
     kind: PrimitiveKind
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[Primitive]:
-        maybe_next = input.next()
-        if maybe_next is None:
-            return NoMatch()
-
-        if isinstance(maybe_next, Primitive) and maybe_next.kind is self.kind:
-            return maybe_next
-
-        return NoMatch()
+    def parse(self, input: TokenStream) -> Parse.Result[Primitive]:
+        match input.next():
+            case Primitive(_, kind) as prim if kind is self.kind:
+                return Parse.Match(prim)
+            case _:
+                return Parse.NoMatch()
 
 
 @dataclass
-class KeywordTerminal(NonChainingParser[Keyword]):
+class KeywordTerminal(Parser[Keyword]):
     kind: KeywordKind
 
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[Keyword]:
-        maybe_next = input.next()
-        if maybe_next is None:
-            return NoMatch()
-
-        if isinstance(maybe_next, Keyword) and maybe_next.kind is self.kind:
-            return maybe_next
-
-        return NoMatch()
+    def parse(self, input: TokenStream) -> Parse.Result[Keyword]:
+        match input.next():
+            case Keyword(_, kind) as kw if kind is self.kind:
+                return Parse.Match(kw)
+            case _:
+                return Parse.NoMatch()
 
 
 ident = IdentifierTerminal()
+integer = IntegerLiteralTerminal()
 
 
 @t.overload

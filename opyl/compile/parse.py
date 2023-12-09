@@ -1,6 +1,5 @@
 import typing as t
 
-from compile import lex
 from compile import lexemes
 from compile import nodes
 from compile.lexemes import KeywordKind as KK
@@ -8,7 +7,8 @@ from compile.lexemes import PrimitiveKind as PK
 from compile.combinators import (
     TokenStream,
     Parser,
-    ParseResult,
+    Parse,
+    OrNot,
     just,
     block,
     parens,
@@ -16,30 +16,41 @@ from compile.combinators import (
     ident,
 )
 
+
 type = ident
 expr = ident.map(lambda item: t.cast(nodes.Expression, item))
 
+
+def named_decl(keyword: lexemes.KeywordKind) -> Parser[nodes.Identifier]:
+    return (
+        just(keyword)
+        .ignore_then(ident)
+        .expect(f'Expected identifier after "{keyword.value}"')
+    )
+
+
 field = (
-    ident.then_ignore(just(PK.Colon))
-    .then(type)
+    ident.expect("Expected identifier.")
+    .then(
+        just(PK.Colon)
+        .expect("expected ':' after identifier")
+        .ignore_then(type.expect("Expected type after ':'"))
+        .expect("Expected explicit type annotation after identifier.")
+    )
     .map(lambda items: nodes.Field(name=items[0], type=items[1]))
 )
 
+assignment = just(PK.Equal).ignore_then(expr).expect("Expected assignment.")
+
 const_decl = (
     just(KK.Const)
-    .ignore_then(ident.expect("expected identifier after 'const'"))
-    .then_ignore(just(PK.Colon).expect("expected ':' after identifier"))
-    .then(type.expect("const declarations expect type after ':'"))
-    .then(
-        just(PK.Equal)
-        .ignore_then(expr)
-        .expect("const declaration requires initializer after type")
-    )
+    .ignore_then(field)
+    .then(assignment)
     .map(
         lambda items: nodes.ConstDeclaration(
-            name=items[0],
-            type=items[1],
-            initializer=items[2],
+            name=items[0].name,
+            type=items[0].type,
+            initializer=items[1],
         )
     )
 )
@@ -47,19 +58,14 @@ const_decl = (
 let_decl = (
     just(KK.Let)
     .ignore_then(just(KK.Mut).or_not().map(lambda mut: mut is not None))
-    .then(ident.expect("expected identifier after 'let' keyword"))
-    .then(just(PK.Colon).ignore_then(type).or_not())
-    .then(
-        just(PK.Equal)
-        .ignore_then(expr)
-        .expect("expected required initializer after variable declaration")
-    )
+    .then(field)
+    .then(assignment)
     .map(
         lambda items: nodes.VarDeclaration(
-            name=items[1],
-            is_mut=items[0],
-            type=items[2],
-            initializer=items[3],
+            is_mut=items[0][0],
+            name=items[0][1].name,
+            type=items[0][1].type,
+            initializer=items[1],
         )
     )
 )
@@ -69,7 +75,7 @@ param_spec = (
     .or_not()
     .map(lambda anon: anon is not None)
     .then(ident.expect("expected parameter name"))
-    .then_ignore(just(PK.Colon))
+    .then_ignore(just(PK.Colon).expect("Expected colon after identifier."))
     .then(
         just(KK.Mut)
         .or_not()
@@ -91,12 +97,27 @@ func_sig = (
     just(KK.Def)
     .ignore_then(ident)
     .then(parens(param_spec.separated_by(just(PK.Comma)).allow_trailing()))
-    # .then(just(PK.RightArrow).ignore_then(type).or_not())  # TODO: Figure out "if then" optional parsing
+    .then(
+        OrNot(
+            just(PK.RightArrow)
+            .ignore_then(type)
+            .expect('Expected return type after "->" token.')
+        )
+    )
+    # .then(
+    #     just(PK.RightArrow)
+    #     .ignore_then(type)
+    #     .expect('Expected return type after "->" token.')
+    #     .or_not()
+    # )
     .map(
         lambda items: nodes.FunctionSignature(
-            name=items[0],
-            params=items[1],
-            return_type=None,  # spanned.item[2],
+            # name=items[0],
+            # params=items[1],
+            # return_type=None,  # spanned.item[2],
+            name=items[0][0],
+            params=items[0][1],
+            return_type=items[1],  # spanned.item[2],
         )
     )
 )
@@ -104,7 +125,7 @@ func_sig = (
 
 class Statement(Parser[nodes.Statement]):
     @t.override
-    def parse(self, input: TokenStream) -> ParseResult[nodes.Statement]:
+    def parse(self, input: TokenStream) -> Parse.Result[nodes.Statement]:
         ...
         # return (
         #     return_stmt
@@ -165,8 +186,8 @@ union_decl = (
     .then(block(lines(func_decl)).or_not().map(lambda _decls: []))
     .map(
         lambda items: nodes.UnionDeclaration(
-            name=items[0],
-            members=items[1],
+            name=items[0][0],
+            members=items[0][1],
             functions=[],  # spanned.item[2],  # TODO: wtf
         )
     )
@@ -185,7 +206,13 @@ if_stmt = (
     .ignore_then(expr.expect("expected conditional expression after 'if' keyword"))
     .then(block(lines(stmt)).map(lambda _stmts: []))
     .then(just(KK.Else).or_not().ignore_then(block(lines(stmt)).map(lambda _stmts: [])))
-    .map(lambda items: nodes.IfStatement(*items))
+    .map(
+        lambda items: nodes.IfStatement(
+            if_condition=items[0][0],
+            if_statements=items[0][1],
+            else_statements=items[1],
+        )
+    )
 )
 
 loop_stmt = stmt | break_stmt | continue_stmt
@@ -203,7 +230,11 @@ for_loop = (
     .then_ignore(just(KK.In))
     .then(expr)
     .then(block(lines(loop_stmt)))
-    .map(lambda items: nodes.ForLoop(*items))
+    .map(
+        lambda items: nodes.ForLoop(
+            target=items[0][0], iterator=items[0][1], statements=items[1]
+        )
+    )
 )
 
 is_arm = (
@@ -229,10 +260,10 @@ when_stmt = (  # Definitely needs closer look at the optional parts
     )
     .map(
         lambda items: nodes.WhenStatement(
-            expression=items[0],
-            target=items[1],
-            is_clauses=items[2][0],
-            else_statements=items[2][1],
+            expression=items[0][0],
+            target=items[0][1],
+            is_clauses=items[1][0],
+            else_statements=items[1][1],
         )
     )
 )
@@ -257,14 +288,12 @@ decl = (
 )
 
 
-def parse(source: str):
-    tokens = lex.tokenize(source)
-    tokens = TokenStream(
-        list(filter(lambda token: not isinstance(token, lexemes.Whitespace), tokens))
-    )
+# def parse(source: str):
+#     tokens = lex.tokenize(source)
+#     tokens = TokenStream(
+#         list(filter(lambda token: not isinstance(token, lexemes.Whitespace), tokens))
+#     )
 
-    # pprint(tokens)
-    # print(just(KK.Const))
-    # print(tokens.tokens[0])
-    result = let_decl(tokens)
-    return result
+#     result = let_decl(tokens)
+#     assert isinstance(result, Match)
+#     return result.item

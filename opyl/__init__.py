@@ -6,3 +6,11 @@ from compile import lexemes
 from compile import nodes
 from compile import errors
 from compile import combinators
+
+from compile.positioning import Span, TextPosition
+from compile.lexemes import (
+    Primitive,
+    PrimitiveKind,
+    Keyword,
+    KeywordKind,
+)

@@ -81,7 +81,7 @@ class TextStream:
 
 @dataclass
 class Stream[T]:
-    tokens: list[T]
+    tokens: list[T]  # TODO: Rename or remove generic type
     index: int = 0
 
     def save(self) -> int:
