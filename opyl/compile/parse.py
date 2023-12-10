@@ -1,4 +1,5 @@
 import typing as t
+from pprint import pprint
 
 from compile import lexemes
 from compile import nodes
@@ -8,7 +9,6 @@ from compile.combinators import (
     TokenStream,
     Parser,
     Parse,
-    OrNot,
     just,
     block,
     parens,
@@ -30,13 +30,13 @@ def named_decl(keyword: lexemes.KeywordKind) -> Parser[nodes.Identifier]:
 
 
 field = (
-    ident.expect("Expected identifier.")
+    ident.expect("expected field identifier")
     .then(
         just(PK.Colon)
-        .expect("expected ':' after identifier")
-        .ignore_then(type.expect("Expected type after ':'"))
-        .expect("Expected explicit type annotation after identifier.")
+        .expect("expected ':' after identifier.")
+        .ignore_then(type.expect("expected type after ':'"))
     )
+    .expect("expected field of form `name: Type`")
     .map(lambda items: nodes.Field(name=items[0], type=items[1]))
 )
 
@@ -98,18 +98,10 @@ func_sig = (
     .ignore_then(ident)
     .then(parens(param_spec.separated_by(just(PK.Comma)).allow_trailing()))
     .then(
-        OrNot(
-            just(PK.RightArrow)
-            .ignore_then(type)
-            .expect('Expected return type after "->" token.')
-        )
+        just(PK.RightArrow)
+        .ignore_then(ident.expect("Expected type name after '->' token."))
+        .or_not()
     )
-    # .then(
-    #     just(PK.RightArrow)
-    #     .ignore_then(type)
-    #     .expect('Expected return type after "->" token.')
-    #     .or_not()
-    # )
     .map(
         lambda items: nodes.FunctionSignature(
             # name=items[0],
@@ -126,17 +118,16 @@ func_sig = (
 class Statement(Parser[nodes.Statement]):
     @t.override
     def parse(self, input: TokenStream) -> Parse.Result[nodes.Statement]:
-        ...
-        # return (
-        #     return_stmt
-        #     | if_stmt
-        #     | for_loop
-        #     | while_loop
-        #     | when_stmt
-        #     | let_decl
-        #     | const_decl
-        #     | expr
-        # ).parse(input)
+        return (
+            return_stmt
+            | if_stmt
+            | for_loop
+            | while_loop
+            | when_stmt
+            | let_decl
+            | const_decl
+            | expr
+        ).parse(input)
 
 
 stmt = Statement()
@@ -159,7 +150,7 @@ func_decl = func_sig.then(block(lines(stmt))).map(
 
 struct_decl = (
     just(KK.Struct)
-    .ignore_then(ident)
+    .ignore_then(ident.expect("expected identifier after 'struct' keyword"))
     .then(block(lines(field).at_least(1)))
     .map(
         lambda items: nodes.StructDeclaration(
@@ -270,10 +261,10 @@ when_stmt = (  # Definitely needs closer look at the optional parts
 
 decl = (
     (
-        const_decl
+        struct_decl
+        | const_decl
         | let_decl
         | func_decl
-        | struct_decl
         | enum_decl
         | union_decl
         | trait_decl
@@ -281,19 +272,24 @@ decl = (
     .expect(
         "expected top level declaration: const, let, func, struct, enum, union, trait"
     )
-    .spanned()
+    # .spanned()
     .separated_by(just(PK.NewLine))
     .allow_leading()
     .allow_trailing()
 )
 
 
-# def parse(source: str):
-#     tokens = lex.tokenize(source)
-#     tokens = TokenStream(
-#         list(filter(lambda token: not isinstance(token, lexemes.Whitespace), tokens))
-#     )
+def parse(tokens: list[lexemes.Token]) -> nodes.Declaration | Parse.Errors:
+    stream = TokenStream(
+        list(
+            filter(
+                lambda token: not (
+                    isinstance(token, lexemes.Whitespace)
+                    or isinstance(token, lexemes.Comment)
+                ),
+                tokens,
+            )
+        )
+    )
 
-#     result = let_decl(tokens)
-#     assert isinstance(result, Match)
-#     return result.item
+    pprint(decl.parse(stream))

@@ -1,6 +1,14 @@
 import opyl
 from opyl import Span, PrimitiveKind
-from opyl.compile.combinators import TokenStream, OrNot, just, integer, Parse
+from opyl.compile.combinators import (
+    TokenStream,
+    OrNot,
+    just,
+    integer,
+    Parse,
+    ident,
+    lines,
+)
 from opyl import lexemes
 
 
@@ -571,3 +579,255 @@ class TestSeparatedBy:
             integer.separated_by(just(PrimitiveKind.Comma)).at_least(3).parse(stream)
         )
         assert isinstance(result, Parse.Match)
+
+    def test_at_least_3_got_4(self):
+        stream = TokenStream(
+            [
+                lexemes.IntegerLiteral(Span.default(), 0),
+                opyl.Primitive(Span.default(), PrimitiveKind.Comma),
+                lexemes.IntegerLiteral(Span.default(), 1),
+                opyl.Primitive(Span.default(), PrimitiveKind.Comma),
+                lexemes.IntegerLiteral(Span.default(), 2),
+                opyl.Primitive(Span.default(), PrimitiveKind.Comma),
+                lexemes.IntegerLiteral(Span.default(), 3),
+            ]
+        )
+
+        result = (
+            integer.separated_by(just(PrimitiveKind.Comma)).at_least(3).parse(stream)
+        )
+        assert isinstance(result, Parse.Match)
+
+
+class TestExpect:
+    def test_match(self):
+        kind = PrimitiveKind.Plus
+        token = lexemes.Primitive(Span.default(), kind)
+        stream = TokenStream([token])
+
+        result = just(kind).expect(f"Expected {kind.value}").parse(stream)
+        assert isinstance(result, Parse.Match) and result.item == token
+
+    def test_no_match(self):
+        kind = PrimitiveKind.Plus
+        token = lexemes.Primitive(Span.default(), kind)
+        stream = TokenStream([token])
+
+        expectation = f"Expected {kind.value}"
+        result = just(PrimitiveKind.Hyphen).expect(expectation).parse(stream)
+        assert (
+            isinstance(result, Parse.Errors)
+            and len(result.errors) == 1
+            and result.errors[0] == (0, expectation)
+        )
+
+
+class TestDelimitedBy:
+    def test_match(self):
+        start_kind = PrimitiveKind.LeftBrace
+        end_kind = PrimitiveKind.RightBrace
+        token = lexemes.IntegerLiteral(Span.default(), 420)
+        stream = TokenStream(
+            [
+                lexemes.Primitive(Span.default(), start_kind),
+                token,
+                lexemes.Primitive(Span.default(), end_kind),
+            ]
+        )
+
+        result = integer.delimited_by(start=just(start_kind), end=just(end_kind)).parse(
+            stream
+        )
+
+        assert isinstance(result, Parse.Match) and result.item.integer == token.integer
+
+    def test_no_closing(self):
+        start_kind = PrimitiveKind.LeftBrace
+        end_kind = PrimitiveKind.RightBrace
+        token = lexemes.IntegerLiteral(Span.default(), 420)
+        stream = TokenStream(
+            [
+                lexemes.Primitive(Span.default(), start_kind),
+                token,
+                lexemes.Primitive(Span.default(), PrimitiveKind.RightParenthesis),
+            ]
+        )
+
+        result = integer.delimited_by(start=just(start_kind), end=just(end_kind)).parse(
+            stream
+        )
+
+        assert isinstance(result, Parse.Errors) and len(result.errors) == 1
+        assert result.errors[0][0] == 2
+
+    def test_no_opening(self):
+        start_kind = PrimitiveKind.LeftBrace
+        end_kind = PrimitiveKind.RightBrace
+        token = lexemes.IntegerLiteral(Span.default(), 420)
+        stream = TokenStream(
+            [
+                lexemes.Primitive(Span.default(), PrimitiveKind.LeftParenthesis),
+                token,
+                lexemes.Primitive(Span.default(), end_kind),
+            ]
+        )
+
+        result = integer.delimited_by(start=just(start_kind), end=just(end_kind)).parse(
+            stream
+        )
+
+        assert isinstance(result, Parse.Errors) and len(result.errors) == 1
+        assert result.errors[0][0] == 0
+
+
+class TestLines:
+    def test_match(self):
+        integers = (
+            lexemes.IntegerLiteral(Span.default(), 1),
+            lexemes.IntegerLiteral(Span.default(), 2),
+            lexemes.IntegerLiteral(Span.default(), 3),
+        )
+
+        stream = TokenStream(
+            [
+                integers[0],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[1],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[2],
+            ]
+        )
+
+        result = lines(integer).parse(stream)
+        assert isinstance(result, Parse.Match) and all(
+            parsed.integer == token.integer
+            for parsed, token in zip(result.item, integers)
+        )
+
+    def test_match_with_trailing(self):
+        integers = (
+            lexemes.IntegerLiteral(Span.default(), 1),
+            lexemes.IntegerLiteral(Span.default(), 2),
+            lexemes.IntegerLiteral(Span.default(), 3),
+        )
+
+        stream = TokenStream(
+            [
+                integers[0],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[1],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[2],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+            ]
+        )
+
+        result = lines(integer).parse(stream)
+        assert isinstance(result, Parse.Match) and all(
+            parsed.integer == token.integer
+            for parsed, token in zip(result.item, integers)
+        )
+
+    def test_match_with_leading(self):
+        integers = (
+            lexemes.IntegerLiteral(Span.default(), 1),
+            lexemes.IntegerLiteral(Span.default(), 2),
+            lexemes.IntegerLiteral(Span.default(), 3),
+        )
+
+        stream = TokenStream(
+            [
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[0],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[1],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[2],
+            ]
+        )
+
+        result = lines(integer).parse(stream)
+        assert isinstance(result, Parse.Match) and all(
+            parsed.integer == token.integer
+            for parsed, token in zip(result.item, integers)
+        )
+
+    def test_match_with_leading_and_trailing(self):
+        integers = (
+            lexemes.IntegerLiteral(Span.default(), 1),
+            lexemes.IntegerLiteral(Span.default(), 2),
+            lexemes.IntegerLiteral(Span.default(), 3),
+        )
+
+        stream = TokenStream(
+            [
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[0],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[1],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[2],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+            ]
+        )
+
+        result = lines(integer).parse(stream)
+        assert isinstance(result, Parse.Match) and all(
+            parsed.integer == token.integer
+            for parsed, token in zip(result.item, integers)
+        )
+
+    def test_no_match_first_item(self):
+        integers = (
+            lexemes.IntegerLiteral(Span.default(), 1),
+            lexemes.IntegerLiteral(Span.default(), 2),
+            lexemes.IntegerLiteral(Span.default(), 3),
+        )
+
+        stream = TokenStream(
+            [
+                lexemes.Primitive(Span.default(), PrimitiveKind.Plus),
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[1],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+                integers[2],
+                lexemes.Primitive(Span.default(), PrimitiveKind.NewLine),
+            ]
+        )
+
+        result = lines(integer).parse(stream)
+        assert isinstance(result, Parse.NoMatch)
+
+
+def test_return_type_present():
+    name = "foo"
+    stream = TokenStream(
+        [
+            lexemes.Primitive(Span.default(), PrimitiveKind.RightArrow),
+            lexemes.Identifier(Span.default(), name),
+        ]
+    )
+
+    result = just(PrimitiveKind.RightArrow).or_not().ignore_then(ident).parse(stream)
+    assert (
+        isinstance(result, Parse.Match)
+        and result.item is not None
+        and result.item.name == name
+    )
+
+
+def test_return_type_not_present():
+    stream = TokenStream([])
+    result = just(PrimitiveKind.RightArrow).or_not().ignore_then(ident).parse(stream)
+    assert isinstance(result, Parse.NoMatch)
+
+
+def test_return_type_only_arrow():
+    stream = TokenStream(
+        [
+            lexemes.Primitive(Span.default(), PrimitiveKind.RightArrow),
+        ]
+    )
+
+    result = just(PrimitiveKind.RightArrow).or_not().ignore_then(ident).parse(stream)
+    assert isinstance(result, Parse.NoMatch)

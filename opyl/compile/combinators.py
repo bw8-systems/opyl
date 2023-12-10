@@ -119,15 +119,13 @@ class Expect[T](Parser[T]):
     @t.override
     def parse(self, input: TokenStream) -> Parse.Result[T]:
         saved = input.save()
-
-        result = self.parser(input)
-        if not isinstance(result, Parse.Match):
-            if isinstance(result, Parse.NoMatch):
+        match self.parser(input):
+            case Parse.Match(item):
+                return Parse.Match(item)
+            case Parse.NoMatch():
                 return Parse.Errors.new(offset=saved, message=self.message)
-
-            return result.with_new(offset=saved, message=self.message)
-
-        return result
+            case Parse.Errors() as errs:
+                return errs.with_new(offset=saved, message=self.message)
 
 
 @dataclass
@@ -138,20 +136,20 @@ class Alternative[T, U](Parser[T | U]):
     @t.override
     def parse(self, input: TokenStream) -> Parse.Result[T | U]:
         match self.first_choice(input):
-            case Parse.Errors() as errors:
-                return errors
+            case Parse.Match(item):
+                return Parse.Match(item)
             case Parse.NoMatch():
                 ...
-            case Parse.Match(item):
-                return Parse.Match(item)
-
-        match self.second_choice(input):
             case Parse.Errors() as errors:
                 return errors
-            case Parse.NoMatch():
-                return Parse.NoMatch()
+
+        match self.second_choice(input):
             case Parse.Match(item):
                 return Parse.Match(item)
+            case Parse.NoMatch():
+                return Parse.NoMatch()
+            case Parse.Errors() as errors:
+                return errors
 
 
 @dataclass
@@ -226,10 +224,12 @@ class SeparatedBy[T, U](Parser[list[T]]):
         items = list[T]()
 
         while True:
+            separator_failed: bool = False
             before = input.save()
 
             match self.separator(input):
                 case Parse.NoMatch() | Parse.Errors() if len(items) == 0:
+                    separator_failed = True
                     input.rewind(before)
                 case Parse.NoMatch() | Parse.Errors() if len(items) != 0:
                     input.rewind(before)
@@ -243,11 +243,15 @@ class SeparatedBy[T, U](Parser[list[T]]):
             before = input.save()
 
             match self.parser(input):
-                case (Parse.NoMatch() | Parse.Errors()) as err:
+                case Parse.Errors() as errs:
+                    return errs
+                case Parse.NoMatch():
                     if self._allow_trailing:
                         input.rewind(before)
+                        if separator_failed:
+                            return Parse.NoMatch()
                         return Parse.Match(items)
-                    return err
+                    return Parse.NoMatch()
                 case Parse.Match(item):
                     items.append(item)
 
