@@ -385,6 +385,17 @@ class TestSeparatedBy:
         assert result.item[1].integer == second.integer
 
     def test_with_trailing(self):
+        # This test should expect a Parse.Match because its beyond the scope of
+        # SeparatedBy to enforce anything "beyond" the alternating pattern of
+        # item - separator - item. After the pattern fails - even if thats because
+        # a separator was found when there shouldn't have been one - the parser no
+        # longer cares. As long as the correct number of items were found, it should
+        # be considered successful. So...
+        # TODO: Any code that assumes this parser should return NoMatch when an unexpected
+        # trailing separator is found should be reworked to no longer make this assumption.
+        # BASICALLY: The only "NoMatch" condition on this parser is on whether the minimum
+        # number of items were parsed.
+
         stream = TokenStream(
             [
                 lexemes.IntegerLiteral(Span.default(), 0),
@@ -396,7 +407,7 @@ class TestSeparatedBy:
 
         parser = integer.separated_by(just(PrimitiveKind.Comma))
         result = parser(stream)
-        assert isinstance(result, Parse.NoMatch)
+        assert isinstance(result, Parse.Match)
 
     def test_with_leading(self):
         stream = TokenStream(
@@ -409,7 +420,7 @@ class TestSeparatedBy:
         )
 
         result = integer.separated_by(just(PrimitiveKind.Comma)).parse(stream)
-        assert isinstance(result, Parse.NoMatch)
+        assert isinstance(result, Parse.Match) and len(result.item) == 0
 
     def test_allow_trailing_match(self):
         first = lexemes.IntegerLiteral(Span.default(), 0)
@@ -512,7 +523,7 @@ class TestSeparatedBy:
             .allow_leading()
             .parse(stream)
         )
-        assert isinstance(result, Parse.NoMatch)
+        assert isinstance(result, Parse.Match)
 
     def test_allow_trailing_with_leading_no_match(self):
         stream = TokenStream(
@@ -529,7 +540,7 @@ class TestSeparatedBy:
             .allow_trailing()
             .parse(stream)
         )
-        assert isinstance(result, Parse.NoMatch)
+        assert isinstance(result, Parse.Match)
 
     def test_allow_leading_and_trailing_with_both_match(self):
         stream = TokenStream(
@@ -796,7 +807,7 @@ class TestLines:
         )
 
         result = lines(integer).parse(stream)
-        assert isinstance(result, Parse.NoMatch)
+        assert isinstance(result, Parse.Match)
 
 
 def test_return_type_present():

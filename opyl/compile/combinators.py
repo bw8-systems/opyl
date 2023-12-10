@@ -95,6 +95,12 @@ class Parser[T](ABC):
     def map_with_span[U](self, func: t.Callable[[T], U]) -> "ToSpan[U]":
         return self.map(func).spanned()
 
+    def repeated(self) -> "Repeated[T]":
+        return Repeated(self)
+
+    def newlines(self) -> "ThenIgnore[T, list[Primitive]]":
+        return self.then_ignore(just(PrimitiveKind.NewLine).repeated())
+
 
 @dataclass
 class ToSpan[T](Parser[Spanned[T]]):
@@ -224,36 +230,52 @@ class SeparatedBy[T, U](Parser[list[T]]):
         items = list[T]()
 
         while True:
-            separator_failed: bool = False
-            before = input.save()
+            before_separator = input.save()
+            if len(items) == 0 and self._allow_leading:
+                match self.separator(input):
+                    case Parse.Errors():
+                        input.rewind(before_separator)
+                    case Parse.NoMatch():
+                        input.rewind(before_separator)
+                    case _:
+                        ...
+                    # case Parse.Match():
+                    #     if not self._allow_leading:
+                    #         input.rewind(before_separator)
+                    #         return Parse.NoMatch()
 
-            match self.separator(input):
-                case Parse.NoMatch() | Parse.Errors() if len(items) == 0:
-                    separator_failed = True
-                    input.rewind(before)
-                case Parse.NoMatch() | Parse.Errors() if len(items) != 0:
-                    input.rewind(before)
-                    if len(items) < self._at_least:
-                        return Parse.NoMatch()
-                    return Parse.Match(items)
-                case _:
-                    if (not self._allow_leading) and (len(items) == 0):
-                        return Parse.NoMatch()
-
-            before = input.save()
-
-            match self.parser(input):
-                case Parse.Errors() as errs:
-                    return errs
-                case Parse.NoMatch():
-                    if self._allow_trailing:
-                        input.rewind(before)
-                        if separator_failed:
-                            return Parse.NoMatch()
+            elif len(items) > 0:
+                match self.separator(input):
+                    case Parse.Match():
+                        ...
+                    case Parse.NoMatch() | Parse.Errors() as errors if len(
+                        items
+                    ) < self._at_least:
+                        input.rewind(before_separator)
+                        return errors
+                        # return Parse.Errors.new(
+                        #     before_separator,
+                        #     f"Expected {self._at_least} items, got {len(items)}",
+                        # )
+                    case Parse.NoMatch() | Parse.Errors():
+                        input.rewind(before_separator)
                         return Parse.Match(items)
-                    return Parse.NoMatch()
+
+            before_item = input.save()
+            match self.parser(input):
                 case Parse.Match(item):
                     items.append(item)
+                case (Parse.NoMatch() | Parse.Errors()) as errors if len(
+                    items
+                ) < self._at_least:
+                    input.rewind(before_separator)
+                    return errors
+                case Parse.NoMatch() | Parse.Errors():
+                    if self._allow_trailing:
+                        input.rewind(before_item)
+                    else:
+                        input.rewind(before_separator)
+                    return Parse.Match(items)
 
     def allow_leading(self) -> t.Self:
         other = copy.copy(self)
@@ -319,6 +341,36 @@ class Map[T, U](Parser[U]):
                 return Parse.Match(self.func(item))
 
 
+@dataclass
+class Repeated[T](Parser[list[T]]):
+    parser: Parser[T]
+    _at_least: int = -1
+
+    @t.override
+    def parse(self, input: TokenStream) -> Parse.Result[list[T]]:
+        items = list[T]()
+        while True:
+            saved = input.save()
+            match self.parser(input):
+                case Parse.Match(item):
+                    items.append(item)
+                case Parse.NoMatch():
+                    input.rewind(saved)
+                    if len(items) < self._at_least:
+                        return Parse.NoMatch()
+                    return Parse.Match(items)
+                case Parse.Errors() as errors:
+                    input.rewind(saved)
+                    if len(items) < self._at_least:
+                        return errors
+                    return Parse.Match(items)
+
+    def at_least(self, minimum: int) -> t.Self:
+        other = copy.copy(self)
+        other._at_least = minimum
+        return other
+
+
 class IdentifierTerminal(Parser[nodes.Identifier]):
     @t.override
     def parse(self, input: TokenStream) -> Parse.Result[nodes.Identifier]:
@@ -368,6 +420,7 @@ class KeywordTerminal(Parser[Keyword]):
 
 ident = IdentifierTerminal()
 integer = IntegerLiteralTerminal()
+newlines = PrimitiveTerminal(PrimitiveKind.NewLine).repeated()
 
 
 @t.overload
@@ -386,9 +439,16 @@ def just(kind: PrimitiveKind | KeywordKind) -> PrimitiveTerminal | KeywordTermin
     return KeywordTerminal(kind)
 
 
-def block[T](parser: Parser[T]) -> DelimitedBy[T, Primitive, Primitive]:
-    return parser.delimited_by(
-        start=just(PrimitiveKind.LeftBrace), end=just(PrimitiveKind.RightBrace)
+def block[T](parser: Parser[T]) -> DelimitedBy[list[T], Primitive, Primitive]:
+    """
+    Parse any number of elements separated by >= 1 newline characters between delimiting curly braces.
+    """
+
+    return parser.separated_by(
+        just(PrimitiveKind.NewLine).repeated().at_least(1)
+    ).delimited_by(
+        start=just(PrimitiveKind.LeftParenthesis),
+        end=just(PrimitiveKind.RightParenthesis),
     )
 
 
@@ -396,12 +456,4 @@ def parens[T](parser: Parser[T]) -> DelimitedBy[T, Primitive, Primitive]:
     return parser.delimited_by(
         start=just(PrimitiveKind.LeftParenthesis),
         end=just(PrimitiveKind.RightParenthesis),
-    )
-
-
-def lines[T](parser: Parser[T]) -> SeparatedBy[T, Primitive]:
-    return (
-        parser.separated_by(just(PrimitiveKind.NewLine))
-        .allow_leading()
-        .allow_trailing()
     )

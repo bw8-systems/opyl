@@ -1,3 +1,5 @@
-struct Span {
-    start: TextPosition
-    end: TextPosition}
+struct Span
+{
+    foo: Foo
+    bar: Bar
+}

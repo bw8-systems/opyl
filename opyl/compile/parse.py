@@ -12,21 +12,13 @@ from compile.combinators import (
     just,
     block,
     parens,
-    lines,
     ident,
+    newlines,
 )
 
 
 type = ident
 expr = ident.map(lambda item: t.cast(nodes.Expression, item))
-
-
-def named_decl(keyword: lexemes.KeywordKind) -> Parser[nodes.Identifier]:
-    return (
-        just(keyword)
-        .ignore_then(ident)
-        .expect(f'Expected identifier after "{keyword.value}"')
-    )
 
 
 field = (
@@ -36,7 +28,7 @@ field = (
         .expect("expected ':' after identifier.")
         .ignore_then(type.expect("expected type after ':'"))
     )
-    .expect("expected field of form `name: Type`")
+    .expect('expected field of form "name: Type"')
     .map(lambda items: nodes.Field(name=items[0], type=items[1]))
 )
 
@@ -140,7 +132,7 @@ return_stmt = (
     .map(lambda item: nodes.ReturnStatement(expression=item))
 )
 
-func_decl = func_sig.then(block(lines(stmt))).map(
+func_decl = func_sig.then(block(stmt)).map(
     lambda items: nodes.FunctionDeclaration(
         name=items[0].name,
         signature=items[0],
@@ -148,10 +140,17 @@ func_decl = func_sig.then(block(lines(stmt))).map(
     )
 )
 
+
 struct_decl = (
     just(KK.Struct)
     .ignore_then(ident.expect("expected identifier after 'struct' keyword"))
-    .then(block(lines(field).at_least(1)))
+    .then_ignore(just(PK.NewLine).or_not())
+    .then(
+        newlines.ignore_then(field)
+        .separated_by(just(PK.NewLine).repeated())
+        .allow_trailing()
+        .delimited_by(start=just(PK.LeftBrace), end=just(PK.RightBrace))
+    )
     .map(
         lambda items: nodes.StructDeclaration(
             name=items[0],
@@ -161,10 +160,24 @@ struct_decl = (
     )
 )
 
+# struct_decl = (
+#     just(KK.Struct)
+#     .ignore_then(ident)
+#     .then(
+#         field.separated_by(just(PK.NewLine).repeated().at_least(1))
+#         .at_least(1)
+#         .delimited_by(start=just(PK.LeftBrace), end=just(PK.RightBrace))
+#     )
+# )
+
 enum_decl = (
     just(KK.Enum)
     .ignore_then(ident)
-    .then(block(ident.separated_by(just(PK.Comma)).allow_trailing().at_least(1)))
+    .then(
+        ident.separated_by(
+            just(PK.Comma).then(just(PK.NewLine).repeated())
+        ).delimited_by(start=just(PK.LeftParenthesis), end=just(PK.RightParenthesis))
+    )
     .map(lambda items: nodes.EnumDeclaration(name=items[0], members=items[1]))
     .spanned()
 )
@@ -174,7 +187,7 @@ union_decl = (
     .ignore_then(ident)
     .then_ignore(just(PK.Equal))
     .then(type.separated_by(just(PK.Pipe)).at_least(1))
-    .then(block(lines(func_decl)).or_not().map(lambda _decls: []))
+    .then(block(func_decl).or_not().map(lambda _decls: []))
     .map(
         lambda items: nodes.UnionDeclaration(
             name=items[0][0],
@@ -187,7 +200,7 @@ union_decl = (
 trait_decl = (
     just(KK.Trait)
     .ignore_then(ident)
-    .then(block(lines(func_decl)).or_not().map(lambda _decls: []))
+    .then(block(func_decl).or_not().map(lambda _decls: []))
     .map(lambda items: nodes.TraitDeclaration(*items))
 )
 
@@ -195,8 +208,8 @@ trait_decl = (
 if_stmt = (
     just(KK.If)
     .ignore_then(expr.expect("expected conditional expression after 'if' keyword"))
-    .then(block(lines(stmt)).map(lambda _stmts: []))
-    .then(just(KK.Else).or_not().ignore_then(block(lines(stmt)).map(lambda _stmts: [])))
+    .then(block(stmt).map(lambda _stmts: []))
+    .then(just(KK.Else).or_not().ignore_then(block(stmt).map(lambda _stmts: [])))
     .map(
         lambda items: nodes.IfStatement(
             if_condition=items[0][0],
@@ -211,7 +224,7 @@ loop_stmt = stmt | break_stmt | continue_stmt
 while_loop = (
     just(KK.While)
     .ignore_then(expr)
-    .then(block(lines(loop_stmt)))
+    .then(block(loop_stmt))
     .map(lambda items: nodes.WhileLoop(condition=items[0], statements=items[1]))
 )
 
@@ -220,7 +233,7 @@ for_loop = (
     .ignore_then(ident)
     .then_ignore(just(KK.In))
     .then(expr)
-    .then(block(lines(loop_stmt)))
+    .then(block(loop_stmt))
     .map(
         lambda items: nodes.ForLoop(
             target=items[0][0], iterator=items[0][1], statements=items[1]
@@ -231,7 +244,7 @@ for_loop = (
 is_arm = (
     just(KK.Is)
     .ignore_then(type)
-    .then(block(lines(stmt)))
+    .then(block(stmt))
     .map(lambda items: nodes.IsClause(*items))
 )
 
@@ -240,14 +253,14 @@ when_stmt = (  # Definitely needs closer look at the optional parts
     .ignore_then(expr)
     .then(just(KK.As).ignore_then(ident).or_not())
     .then(
-        block(
-            is_arm.separated_by(just(PK.NewLine)).then(
-                just(KK.Else)
-                .ignore_then(block(lines(stmt)))
-                .or_not()
-                .map(lambda stmts: list[nodes.Statement]())  # TODO: testing only
-            )
+        is_arm.separated_by(just(PK.NewLine))
+        .then(
+            just(KK.Else)
+            .ignore_then(block(stmt))
+            .or_not()
+            .map(lambda stmts: list[nodes.Statement]())  # TODO: testing only
         )
+        .delimited_by(start=just(PK.LeftBrace), end=just(PK.RightBrace))
     )
     .map(
         lambda items: nodes.WhenStatement(
@@ -260,7 +273,9 @@ when_stmt = (  # Definitely needs closer look at the optional parts
 )
 
 decl = (
-    (
+    just(PK.NewLine)
+    .repeated()
+    .ignore_then(
         struct_decl
         | const_decl
         | let_decl
@@ -279,7 +294,7 @@ decl = (
 )
 
 
-def parse(tokens: list[lexemes.Token]) -> nodes.Declaration | Parse.Errors:
+def parse(tokens: list[lexemes.Token]) -> ...:
     stream = TokenStream(
         list(
             filter(
@@ -292,4 +307,5 @@ def parse(tokens: list[lexemes.Token]) -> nodes.Declaration | Parse.Errors:
         )
     )
 
-    pprint(decl.parse(stream))
+    # pprint(stream)
+    pprint(struct_decl.parse(stream))

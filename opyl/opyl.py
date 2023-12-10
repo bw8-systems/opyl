@@ -3,17 +3,9 @@
 import sys
 import argparse
 import pathlib
-from pprint import pprint
 
 from compile import lex
-from compile import lexemes
 from compile import parse
-from compile.positioning import Span
-from compile.combinators import TokenStream
-from compile.lexemes import PrimitiveKind as PK
-from compile.lexemes import KeywordKind as KK
-from compile.combinators import just, ident, lines, block
-from compile.parse import expr, stmt
 
 
 def main(input_path: str):
