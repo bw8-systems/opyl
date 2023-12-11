@@ -97,3 +97,9 @@ class Stream[T]:
         item = self.tokens[self.index]
         self.index += 1
         return item
+
+    def peek(self) -> T | None:
+        if self.index >= len(self.tokens):
+            return None
+
+        return self.tokens[self.index]

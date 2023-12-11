@@ -3,6 +3,7 @@ from pprint import pprint
 
 from compile import lexemes
 from compile import nodes
+from compile import lex
 from compile.lexemes import KeywordKind as KK
 from compile.lexemes import PrimitiveKind as PK
 from compile.combinators import (
@@ -11,14 +12,14 @@ from compile.combinators import (
     Parse,
     just,
     block,
-    parens,
     ident,
     newlines,
+    integer,
 )
 
 
 type = ident
-expr = ident.map(lambda item: t.cast(nodes.Expression, item))
+expr = (ident | integer).map(lambda item: t.cast(nodes.Expression, item))
 
 
 field = (
@@ -32,12 +33,10 @@ field = (
     .map(lambda items: nodes.Field(name=items[0], type=items[1]))
 )
 
-assignment = just(PK.Equal).ignore_then(expr).expect("Expected assignment.")
-
 const_decl = (
     just(KK.Const)
     .ignore_then(field)
-    .then(assignment)
+    .then(just(PK.Equal).ignore_then(expr))
     .map(
         lambda items: nodes.ConstDeclaration(
             name=items[0].name,
@@ -51,7 +50,7 @@ let_decl = (
     just(KK.Let)
     .ignore_then(just(KK.Mut).or_not().map(lambda mut: mut is not None))
     .then(field)
-    .then(assignment)
+    .then(just(PK.Equal).ignore_then(expr))
     .map(
         lambda items: nodes.VarDeclaration(
             is_mut=items[0][0],
@@ -88,7 +87,15 @@ param_spec = (
 func_sig = (
     just(KK.Def)
     .ignore_then(ident)
-    .then(parens(param_spec.separated_by(just(PK.Comma)).allow_trailing()))
+    .then(
+        newlines.ignore_then(param_spec)
+        .separated_by(just(PK.Comma).then(just(PK.NewLine).repeated()))
+        .allow_trailing()
+        .delimited_by(
+            start=just(PK.LeftParenthesis),
+            end=newlines.ignore_then(just(PK.RightParenthesis)),
+        )
+    )
     .then(
         just(PK.RightArrow)
         .ignore_then(ident.expect("Expected type name after '->' token."))
@@ -96,12 +103,9 @@ func_sig = (
     )
     .map(
         lambda items: nodes.FunctionSignature(
-            # name=items[0],
-            # params=items[1],
-            # return_type=None,  # spanned.item[2],
             name=items[0][0],
             params=items[0][1],
-            return_type=items[1],  # spanned.item[2],
+            return_type=items[1],
         )
     )
 )
@@ -132,18 +136,26 @@ return_stmt = (
     .map(lambda item: nodes.ReturnStatement(expression=item))
 )
 
-func_decl = func_sig.then(block(stmt)).map(
-    lambda items: nodes.FunctionDeclaration(
-        name=items[0].name,
-        signature=items[0],
-        body=items[1],
+func_decl = (
+    func_sig.then_ignore(just(PK.NewLine).or_not())
+    .then(
+        newlines.ignore_then(stmt)
+        .separated_by(just(PK.NewLine).repeated())
+        .allow_trailing()
+        .delimited_by(start=just(PK.LeftBrace), end=just(PK.RightBrace))
+    )
+    .map(
+        lambda items: nodes.FunctionDeclaration(
+            name=items[0].name,
+            signature=items[0],
+            body=items[1],
+        )
     )
 )
 
-
 struct_decl = (
     just(KK.Struct)
-    .ignore_then(ident.expect("expected identifier after 'struct' keyword"))
+    .ignore_then(ident.expect("expected identifier after 'struct' keyword."))
     .then_ignore(just(PK.NewLine).or_not())
     .then(
         newlines.ignore_then(field)
@@ -160,47 +172,61 @@ struct_decl = (
     )
 )
 
-# struct_decl = (
-#     just(KK.Struct)
-#     .ignore_then(ident)
-#     .then(
-#         field.separated_by(just(PK.NewLine).repeated().at_least(1))
-#         .at_least(1)
-#         .delimited_by(start=just(PK.LeftBrace), end=just(PK.RightBrace))
-#     )
-# )
-
 enum_decl = (
     just(KK.Enum)
-    .ignore_then(ident)
+    .ignore_then(ident.expect("expected identifier after 'enum' keyword."))
+    .then_ignore(just(PK.NewLine).or_not())
     .then(
-        ident.separated_by(
-            just(PK.Comma).then(just(PK.NewLine).repeated())
-        ).delimited_by(start=just(PK.LeftParenthesis), end=just(PK.RightParenthesis))
+        newlines.ignore_then(ident)
+        .separated_by(just(PK.Comma).then(just(PK.NewLine).repeated()))
+        .allow_trailing()
+        .delimited_by(
+            start=just(PK.LeftBrace), end=newlines.ignore_then(just(PK.RightBrace))
+        )
     )
     .map(lambda items: nodes.EnumDeclaration(name=items[0], members=items[1]))
-    .spanned()
 )
 
 union_decl = (
     just(KK.Union)
-    .ignore_then(ident)
+    .ignore_then(ident.expect("expected identifier after 'union' keyword."))
     .then_ignore(just(PK.Equal))
-    .then(type.separated_by(just(PK.Pipe)).at_least(1))
-    .then(block(func_decl).or_not().map(lambda _decls: []))
+    .then(type.separated_by(just(PK.Pipe)).at_least(2))
+    .then_ignore(just(PK.NewLine).or_not())
+    .then(
+        (
+            just(PK.LeftBrace)
+            .ignore_then(
+                newlines.ignore_then(func_decl)
+                .separated_by(just(PK.NewLine).repeated())
+                .allow_leading()
+                .allow_trailing()
+            )
+            .then_ignore(just(PK.RightBrace))
+        ).or_else([])
+    )
     .map(
         lambda items: nodes.UnionDeclaration(
             name=items[0][0],
             members=items[0][1],
-            functions=[],  # spanned.item[2],  # TODO: wtf
+            functions=items[1],
         )
     )
 )
 
 trait_decl = (
     just(KK.Trait)
-    .ignore_then(ident)
-    .then(block(func_decl).or_not().map(lambda _decls: []))
+    .ignore_then(ident.expect("expected identifier after 'trait' keyword."))
+    .then_ignore(just(PK.NewLine).or_not())
+    .then(
+        newlines.ignore_then(func_sig)
+        .separated_by(just(PK.NewLine).repeated())
+        .allow_leading()
+        .allow_trailing()
+        .delimited_by(
+            start=just(PK.LeftBrace), end=newlines.ignore_then(just(PK.RightBrace))
+        )
+    )
     .map(lambda items: nodes.TraitDeclaration(*items))
 )
 
@@ -273,28 +299,27 @@ when_stmt = (  # Definitely needs closer look at the optional parts
 )
 
 decl = (
-    just(PK.NewLine)
-    .repeated()
-    .ignore_then(
-        struct_decl
+    newlines.ignore_then(
+        enum_decl
+        | struct_decl
         | const_decl
         | let_decl
         | func_decl
-        | enum_decl
         | union_decl
         | trait_decl
     )
     .expect(
-        "expected top level declaration: const, let, func, struct, enum, union, trait"
+        "Expected top level declarations using keywords enum, struct, const, let, def, union, or trait."
     )
-    # .spanned()
     .separated_by(just(PK.NewLine))
     .allow_leading()
-    .allow_trailing()
 )
 
 
-def parse(tokens: list[lexemes.Token]) -> ...:
+def parse(source: str) -> ...:
+    lines = source.splitlines()
+    tokens = lex.tokenize(source)
+
     stream = TokenStream(
         list(
             filter(
@@ -307,5 +332,20 @@ def parse(tokens: list[lexemes.Token]) -> ...:
         )
     )
 
-    # pprint(stream)
-    pprint(struct_decl.parse(stream))
+    result = decl.parse(stream)
+    pprint(result)
+    # if isinstance(result, Parse.Errors):
+    #     for idx, msg in result.errors:
+    #         pprint(msg)
+    #         pprint(stream.tokens[idx])
+    #         pprint(
+    #             source[
+    #                 stream.tokens[idx].span.start.absolute - 10 : stream.tokens[
+    #                     idx
+    #                 ].span.stop.absolute
+    #                 + 10
+    #             ]
+    #         )
+    #         print()
+    # else:
+    #     pprint(result)

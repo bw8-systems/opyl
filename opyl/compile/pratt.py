@@ -1,3 +1,4 @@
+import typing as t
 from dataclasses import dataclass
 
 from compile import nodes
@@ -5,51 +6,52 @@ from compile import combinators as comb
 from compile.nodes import PrefixOperator, BinaryOperator
 from compile.positioning import Span
 
-# from compile import lexemes
 from compile.lexemes import (
     Primitive,
     Identifier,
     IntegerLiteral,
     PrimitiveKind,
 )
-from compile import errors
 
 
 @dataclass
 class ExpressionParser(comb.Parser[nodes.Expression]):
-    def parse(self) -> nodes.Expression:
-        return self.expression(0)
+    @t.override
+    def parse(self, input: comb.TokenStream) -> comb.Parse.Result[nodes.Expression]:
+        return self.expression(input, 0)
 
-    def expression(self, precedence: int) -> nodes.Expression:
-        match self.tokens.next():
+    def expression(
+        self, input: comb.TokenStream, precedence: int
+    ) -> comb.Parse.Result[nodes.Expression]:
+        match input.next():
             case Primitive(span, PrimitiveKind.LeftParenthesis):
-                left = self.grouped_expression()
+                left = self.grouped_expression(input)
             case Primitive(span, kind) if PrefixOperator.is_prefix_op(kind):
                 prefix_operator = PrefixOperator(kind)
-                left = self.prefix_operator_expression(prefix_operator, span)
-            case Identifier(span, name):
-                left = nodes.Identifier(span, name)
-            case IntegerLiteral(span, integer):
-                left = nodes.IntegerLiteral(span, integer)
+                left = self.prefix_operator_expression(input, prefix_operator, span)
+            case Identifier(_, name):
+                left = nodes.Identifier(name)
+            case IntegerLiteral(_, integer):
+                left = nodes.IntegerLiteral(integer)
             case _:
-                raise errors.UnexpectedToken()
+                return comb.Parse.NoMatch()
 
-        while precedence < self.check_precedence():
-            match self.tokens.next():
+        while precedence < self.check_precedence(input):
+            match input.next():
                 case Primitive(span, kind) if BinaryOperator.is_binary_op(kind):
                     operator = BinaryOperator(kind)
-                    left = self.binary_operator_expression(left, operator)
+                    left = self.binary_operator_expression(input, left.item, operator)
                 case Primitive(_, PrimitiveKind.LeftParenthesis):
-                    left = self.call_expression(left)
+                    left = self.call_expression(input, left)
                 case Primitive(_, PrimitiveKind.LeftBracket):
-                    left = self.subscript_expression(left)
+                    left = self.subscript_expression(input, left)
                 case _:
-                    raise errors.UnexpectedToken()
+                    return comb.Parse.NoMatch()
 
-        return left
+        return comb.Parse.Match(left)
 
-    def check_precedence(self) -> int:
-        match self.tokens.peek():
+    def check_precedence(self, input: comb.TokenStream) -> int:
+        match input.peek():
             case Primitive(_, kind) if BinaryOperator.is_binary_op(kind):
                 return BinaryOperator(kind).precedence()
             case Primitive(_, PrimitiveKind.LeftParenthesis):
@@ -63,16 +65,18 @@ class ExpressionParser(comb.Parser[nodes.Expression]):
 
     def prefix_operator_expression(
         self,
+        input: comb.TokenStream,
         operator: nodes.PrefixOperator,
         start_span: Span,
     ) -> nodes.Expression:
-        right = self.expression(operator.precedence())
+        right = self.expression(input, operator.precedence())
         return nodes.PrefixExpression(
             span=start_span + right.span, operator=operator, expr=right
         )
 
     def binary_operator_expression(
         self,
+        input: comb.TokenStream,
         left: nodes.Expression,
         operator: BinaryOperator,
     ) -> nodes.Expression:
@@ -80,21 +84,25 @@ class ExpressionParser(comb.Parser[nodes.Expression]):
         if operator.is_right_associative():
             precedence -= 1
 
-        right = self.expression(precedence)
+        right = self.expression(input, precedence)
         return nodes.BinaryExpression(
             span=left.span + right.span, operator=operator, left=left, right=right
         )
 
-    def grouped_expression(self) -> nodes.Expression:
-        left = self.parse()
-        closing = self.tokens.next()
+    def grouped_expression(
+        self, input: comb.TokenStream
+    ) -> comb.Parse.Result[nodes.Expression]:
+        left = self.parse(input)
+        closing = input.next()
         assert (
             isinstance(closing, Primitive)
             and closing.kind is PrimitiveKind.RightParenthesis
         )
         return left
 
-    def call_expression(self, function: nodes.Expression) -> nodes.Expression:
+    def call_expression(
+        self, input: comb.TokenStream, function: nodes.Expression
+    ) -> comb.Parse.Result[nodes.Expression]:
         maybe_right_paren = self.maybe(
             comb.PrimitiveTerminal(self.tokens, PrimitiveKind.RightParenthesis)
         ).parse()
@@ -127,8 +135,10 @@ class ExpressionParser(comb.Parser[nodes.Expression]):
             arguments=args,
         )
 
-    def subscript_expression(self, base: nodes.Expression) -> nodes.Expression:
-        index = self.parse()
+    def subscript_expression(
+        self, input: comb.TokenStream, base: nodes.Expression
+    ) -> comb.Parse.Result[nodes.Expression]:
+        index = self.parse(input)
         closing_brace = comb.PrimitiveTerminal(
             self.tokens, PrimitiveKind.RightBracket
         ).parse()

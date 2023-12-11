@@ -86,6 +86,9 @@ class Parser[T](ABC):
     def or_not(self) -> "OrNot[T]":
         return OrNot(self)
 
+    def or_else(self, default: T) -> "OrElse[T]":
+        return OrElse(self, default)
+
     def expect(self, message: str) -> "Expect[T]":
         return Expect(self, message)
 
@@ -141,11 +144,13 @@ class Alternative[T, U](Parser[T | U]):
 
     @t.override
     def parse(self, input: TokenStream) -> Parse.Result[T | U]:
+        saved = input.save()
+
         match self.first_choice(input):
             case Parse.Match(item):
                 return Parse.Match(item)
             case Parse.NoMatch():
-                ...
+                input.rewind(saved)
             case Parse.Errors() as errors:
                 return errors
 
@@ -239,11 +244,6 @@ class SeparatedBy[T, U](Parser[list[T]]):
                         input.rewind(before_separator)
                     case _:
                         ...
-                    # case Parse.Match():
-                    #     if not self._allow_leading:
-                    #         input.rewind(before_separator)
-                    #         return Parse.NoMatch()
-
             elif len(items) > 0:
                 match self.separator(input):
                     case Parse.Match():
@@ -253,10 +253,6 @@ class SeparatedBy[T, U](Parser[list[T]]):
                     ) < self._at_least:
                         input.rewind(before_separator)
                         return errors
-                        # return Parse.Errors.new(
-                        #     before_separator,
-                        #     f"Expected {self._at_least} items, got {len(items)}",
-                        # )
                     case Parse.NoMatch() | Parse.Errors():
                         input.rewind(before_separator)
                         return Parse.Match(items)
@@ -270,7 +266,7 @@ class SeparatedBy[T, U](Parser[list[T]]):
                 ) < self._at_least:
                     input.rewind(before_separator)
                     return errors
-                case Parse.NoMatch() | Parse.Errors():
+                case Parse.NoMatch() | Parse.Errors() as errors:
                     if self._allow_trailing:
                         input.rewind(before_item)
                     else:
@@ -321,6 +317,25 @@ class OrNot[T](Parser[T | None]):
             case Parse.NoMatch():
                 input.rewind(saved)
                 return Parse.Match(None)
+            case Parse.Errors() as errors:
+                return errors
+            case Parse.Match(item):
+                return Parse.Match(item)
+
+
+@dataclass
+class OrElse[T](Parser[T]):
+    parser: Parser[T]
+    default: T
+
+    @t.override
+    def parse(self, input: TokenStream) -> Parse.Result[T]:
+        saved = input.save()
+
+        match self.parser(input):
+            case Parse.NoMatch():
+                input.rewind(saved)
+                return Parse.Match(self.default)
             case Parse.Errors() as errors:
                 return errors
             case Parse.Match(item):
@@ -457,3 +472,7 @@ def parens[T](parser: Parser[T]) -> DelimitedBy[T, Primitive, Primitive]:
         start=just(PrimitiveKind.LeftParenthesis),
         end=just(PrimitiveKind.RightParenthesis),
     )
+
+
+def lines[T](parser: Parser[T]) -> SeparatedBy[T, Primitive]:
+    return parser.separated_by(just(PrimitiveKind.NewLine))

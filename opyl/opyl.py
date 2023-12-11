@@ -10,9 +10,7 @@ from compile import parse
 
 def main(input_path: str):
     source = pathlib.Path(input_path).read_text()
-    tokens = lex.tokenize(source)
-
-    parse.parse(tokens)
+    parse.parse(source)
     # pprint(tree)
 
 
