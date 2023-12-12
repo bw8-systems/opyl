@@ -318,9 +318,7 @@ decl = (
     | trait_decl
 )
 
-decls = newlines.ignore_then(decl.separated_by(newlines.at_least(1))).expect(
-    "Expected top level declaration using keywords enum, struct, const, let, def, union, or trait."
-)
+decls = newlines.ignore_then(decl.separated_by(newlines.at_least(1)))
 
 
 def split_stream(stream: TokenStream) -> list[tuple[int, int]]:
@@ -360,15 +358,17 @@ def parse(source: str) -> ...:
 
     pairs = split_stream(stream)
     first = pairs[0]
+    print(first)
+    # print(
+    #     source[
+    #         stream.tokens[first[0]].span.start.absolute : stream.tokens[
+    #             first[1]
+    #         ].span.stop.absolute
+    #     ]
+    # )
 
-    print(
-        source[
-            stream.tokens[first[0]].span.start.absolute : stream.tokens[
-                first[1]
-            ].span.stop.absolute
-        ]
-    )
-
+    print(stream.tokens[first[1]])
+    pprint(decls.parse(TokenStream(stream.tokens[first[0] : first[1] + 1])))
     # success = 0
     # for pair in pairs:
     #     result = decls.parse(TokenStream(stream.tokens[pair[0] : pair[1]]))
