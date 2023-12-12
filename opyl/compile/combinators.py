@@ -50,7 +50,7 @@ class Parse:
 class Parser[T](ABC):
     @abstractmethod
     def parse(self, input: TokenStream) -> Parse.Result[T]:
-        ...
+        raise NotImplementedError()
 
     def __call__(self, input: TokenStream) -> Parse.Result[T]:
         return self.parse(input)
@@ -377,6 +377,7 @@ class Map[T, U](Parser[U]):
 @dataclass
 class Repeated[T](Parser[list[T]]):
     parser: Parser[T]
+
     _at_least: int = -1
 
     @t.override

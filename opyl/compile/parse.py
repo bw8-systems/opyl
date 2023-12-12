@@ -23,13 +23,13 @@ expr = (ident | integer).map(lambda item: t.cast(nodes.Expression, item))
 
 
 field = (
-    ident.expect("Expected field identifier.")
+    ident.expect("Expected identifier.")
     .then(
         just(PK.Colon)
         .expect("Expected ':' after identifier.")
         .ignore_then(type.expect("expected type after ':'"))
     )
-    .expect('Expected field of form "name: Type".')
+    .expect("Expected field of form `ident: Type`")
     .map(lambda items: nodes.Field(name=items[0], type=items[1]))
 )
 
@@ -170,13 +170,15 @@ struct_decl = (
         .separated_by(just(PK.NewLine).repeated())
         .at_least(1)
         .allow_trailing()
-        .delimited_by(start=just(PK.LeftBrace), end=just(PK.RightBrace))
+        .delimited_by(
+            start=just(PK.LeftBrace), end=newlines.ignore_then(just(PK.RightBrace))
+        )
     )
     .map(
         lambda items: nodes.StructDeclaration(
             name=items[0],
             fields=items[1],
-            functions=[],  # TODO
+            functions=[],
         )
     )
 )
@@ -321,6 +323,26 @@ decls = newlines.ignore_then(decl.separated_by(newlines.at_least(1))).expect(
 )
 
 
+def split_stream(stream: TokenStream) -> list[tuple[int, int]]:
+    nesting_level = 0
+    delimiters = list[tuple[int, int]]()
+    start = 0
+
+    for idx, token in enumerate(stream.tokens):
+        match token:
+            case lexemes.Primitive(_, PK.LeftBrace):
+                nesting_level += 1
+            case lexemes.Primitive(_, PK.RightBrace):
+                nesting_level -= 1
+                if nesting_level == 0:
+                    delimiters.append((start, idx))
+                    start = idx
+            case _:
+                continue
+
+    return delimiters
+
+
 def parse(source: str) -> ...:
     tokens = lex.tokenize(source)
 
@@ -336,7 +358,26 @@ def parse(source: str) -> ...:
         )
     )
 
-    result = decls.parse(stream)
-    pprint(result)
-    if isinstance(result, Parse.Errors):
-        print(stream.tokens[result.errors[0][0] - 1])
+    pairs = split_stream(stream)
+    first = pairs[0]
+
+    print(
+        source[
+            stream.tokens[first[0]].span.start.absolute : stream.tokens[
+                first[1]
+            ].span.stop.absolute
+        ]
+    )
+
+    # success = 0
+    # for pair in pairs:
+    #     result = decls.parse(TokenStream(stream.tokens[pair[0] : pair[1]]))
+    #     if isinstance(result, Parse.Errors):
+    #         pprint(result.errors)
+    #         print(stream.tokens[result.errors[0][0] - 1])
+    #         print()
+    #     elif isinstance(result, Parse.Match):
+    #         success += 1
+    #         pprint(result.item)
+
+    # # if success ==

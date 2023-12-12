@@ -4,7 +4,6 @@ import sys
 import argparse
 import pathlib
 
-from compile import lex
 from compile import parse
 
 
