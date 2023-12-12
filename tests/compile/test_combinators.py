@@ -609,6 +609,41 @@ class TestSeparatedBy:
         )
         assert isinstance(result, Parse.Match)
 
+    def test_empty_no_minimum(self):
+        stream = TokenStream([])
+
+        result = integer.separated_by(just(PrimitiveKind.Comma)).parse(stream)
+        assert isinstance(result, Parse.Match)
+
+    def test_empty_doesnt_meet_minimum(self):
+        stream = TokenStream([])
+
+        result = (
+            integer.separated_by(just(PrimitiveKind.Comma)).at_least(1).parse(stream)
+        )
+        assert isinstance(result, Parse.NoMatch)
+
+    def test_empty_allow_leading_no_minimum(self):
+        stream = TokenStream([])
+
+        result = (
+            integer.separated_by(just(PrimitiveKind.Comma))
+            .allow_leading()
+            .parse(stream)
+        )
+        assert isinstance(result, Parse.Match)
+
+    def test_empty_allow_leading_doesnt_meet_minimum(self):
+        stream = TokenStream([])
+
+        result = (
+            integer.separated_by(just(PrimitiveKind.Comma))
+            .allow_leading()
+            .at_least(1)
+            .parse(stream)
+        )
+        assert isinstance(result, Parse.NoMatch)
+
 
 class TestExpect:
     def test_match(self):

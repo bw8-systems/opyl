@@ -94,7 +94,7 @@ param_spec = (
 
 func_sig = (
     just(KK.Def)
-    .ignore_then(ident)
+    .ignore_then(ident.expect("Expected identifier after 'def' keyword."))
     .then(
         newlines.ignore_then(param_spec)
         .separated_by(just(PK.Comma).then(just(PK.NewLine).repeated()))
@@ -225,12 +225,11 @@ union_decl = (
 
 trait_decl = (
     just(KK.Trait)
-    .ignore_then(ident.expect("expected identifier after 'trait' keyword."))
+    .ignore_then(ident.expect("Expected identifier after 'trait' keyword."))
     .then_ignore(just(PK.NewLine).or_not())
     .then(
         newlines.ignore_then(func_sig)
         .separated_by(just(PK.NewLine).repeated())
-        .allow_leading()
         .allow_trailing()
         .delimited_by(
             start=just(PK.LeftBrace), end=newlines.ignore_then(just(PK.RightBrace))
@@ -308,20 +307,17 @@ when_stmt = (  # Definitely needs closer look at the optional parts
 )
 
 decl = (
-    newlines.ignore_then(
-        enum_decl
-        | struct_decl
-        | const_decl
-        | let_decl
-        | func_decl
-        | union_decl
-        | trait_decl
-    )
-    .expect(
-        "Expected top level declarations using keywords enum, struct, const, let, def, union, or trait."
-    )
-    .separated_by(just(PK.NewLine))
-    .allow_leading()
+    enum_decl
+    | struct_decl
+    | const_decl
+    | let_decl
+    | func_decl
+    | union_decl
+    | trait_decl
+)
+
+decls = newlines.ignore_then(decl.separated_by(newlines.at_least(1))).expect(
+    "Expected top level declaration using keywords enum, struct, const, let, def, union, or trait."
 )
 
 
@@ -340,20 +336,7 @@ def parse(source: str) -> ...:
         )
     )
 
-    result = struct_decl.parse(stream)
+    result = decls.parse(stream)
     pprint(result)
-    # if isinstance(result, Parse.Errors):
-    #     for idx, msg in result.errors:
-    #         pprint(msg)
-    #         pprint(stream.tokens[idx])
-    #         pprint(
-    #             source[
-    #                 stream.tokens[idx].span.start.absolute - 10 : stream.tokens[
-    #                     idx
-    #                 ].span.stop.absolute
-    #                 + 10
-    #             ]
-    #         )
-    #         print()
-    # else:
-    #     pprint(result)
+    if isinstance(result, Parse.Errors):
+        print(stream.tokens[result.errors[0][0] - 1])

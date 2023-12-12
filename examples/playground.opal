@@ -1,4 +1,5 @@
 let mut foo: Type = 5
+
 const NAME: u8 = 2
 
 struct Span {
@@ -15,7 +16,6 @@ enum TokenKind {
 
 union Token = u16 | str
 
-
 def function(
     foo: Foo,
     bar: Bar,
@@ -23,5 +23,7 @@ def function(
     foo
 }
 
-trait Iterator {}
-
+trait Iterator {
+    def func() -> Type
+    def func2(name: Type)
+}

@@ -226,7 +226,6 @@ class SeparatedBy[T, U](Parser[list[T]]):
     parser: Parser[T]
     separator: Parser[U]
 
-    _allow_empty: bool = False
     _allow_leading: bool = False
     _allow_trailing: bool = False
     _at_least: int = 0
@@ -246,6 +245,8 @@ class SeparatedBy[T, U](Parser[list[T]]):
                 case Parse.Errors() as errors:
                     return errors
 
+        before_item = input.save()
+
         match self.parser(input):
             case Parse.Match(item):
                 items.append(item)
@@ -254,7 +255,10 @@ class SeparatedBy[T, U](Parser[list[T]]):
                     return Parse.NoMatch()
                 return Parse.Match(items)
             case Parse.Errors() as errors:
-                return errors
+                input.rewind(before_item)
+                if len(items) < self._at_least:
+                    return errors
+                return Parse.Match(items)
 
         while True:
             before_separator = input.save()
@@ -286,11 +290,6 @@ class SeparatedBy[T, U](Parser[list[T]]):
         if len(items) < self._at_least:
             return Parse.NoMatch()
         return Parse.Match(items)
-
-    def allow_empty(self) -> t.Self:
-        other = copy.copy(self)
-        other._allow_empty = True
-        return other
 
     def allow_leading(self) -> t.Self:
         other = copy.copy(self)
