@@ -23,20 +23,24 @@ expr = (ident | integer).map(lambda item: t.cast(nodes.Expression, item))
 
 
 field = (
-    ident.expect("expected field identifier")
+    ident.expect("Expected field identifier.")
     .then(
         just(PK.Colon)
-        .expect("expected ':' after identifier.")
+        .expect("Expected ':' after identifier.")
         .ignore_then(type.expect("expected type after ':'"))
     )
-    .expect('expected field of form "name: Type"')
+    .expect('Expected field of form "name: Type".')
     .map(lambda items: nodes.Field(name=items[0], type=items[1]))
 )
 
 const_decl = (
     just(KK.Const)
     .ignore_then(field)
-    .then(just(PK.Equal).ignore_then(expr))
+    .then(
+        just(PK.Equal)
+        .ignore_then(expr)
+        .expect("Expected initializer after type annotation.")
+    )
     .map(
         lambda items: nodes.ConstDeclaration(
             name=items[0].name,
@@ -50,7 +54,11 @@ let_decl = (
     just(KK.Let)
     .ignore_then(just(KK.Mut).or_not().map(lambda mut: mut is not None))
     .then(field)
-    .then(just(PK.Equal).ignore_then(expr))
+    .then(
+        just(PK.Equal)
+        .ignore_then(expr)
+        .expect("Expected initializer after type annotation.")
+    )
     .map(
         lambda items: nodes.VarDeclaration(
             is_mut=items[0][0],
@@ -160,6 +168,7 @@ struct_decl = (
     .then(
         newlines.ignore_then(field)
         .separated_by(just(PK.NewLine).repeated())
+        .at_least(1)
         .allow_trailing()
         .delimited_by(start=just(PK.LeftBrace), end=just(PK.RightBrace))
     )
@@ -317,7 +326,6 @@ decl = (
 
 
 def parse(source: str) -> ...:
-    lines = source.splitlines()
     tokens = lex.tokenize(source)
 
     stream = TokenStream(
@@ -332,7 +340,7 @@ def parse(source: str) -> ...:
         )
     )
 
-    result = decl.parse(stream)
+    result = struct_decl.parse(stream)
     pprint(result)
     # if isinstance(result, Parse.Errors):
     #     for idx, msg in result.errors:

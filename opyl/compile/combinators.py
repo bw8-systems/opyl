@@ -226,6 +226,7 @@ class SeparatedBy[T, U](Parser[list[T]]):
     parser: Parser[T]
     separator: Parser[U]
 
+    _allow_empty: bool = False
     _allow_leading: bool = False
     _allow_trailing: bool = False
     _at_least: int = 0
@@ -234,44 +235,62 @@ class SeparatedBy[T, U](Parser[list[T]]):
     def parse(self, input: TokenStream) -> Parse.Result[list[T]]:
         items = list[T]()
 
+        before_separator = input.save()
+
+        if self._allow_leading:
+            match self.separator(input):
+                case Parse.Match():
+                    ...
+                case Parse.NoMatch():
+                    input.rewind(before_separator)
+                case Parse.Errors() as errors:
+                    return errors
+
+        match self.parser(input):
+            case Parse.Match(item):
+                items.append(item)
+            case Parse.NoMatch():
+                if len(items) < self._at_least:
+                    return Parse.NoMatch()
+                return Parse.Match(items)
+            case Parse.Errors() as errors:
+                return errors
+
         while True:
             before_separator = input.save()
-            if len(items) == 0 and self._allow_leading:
-                match self.separator(input):
-                    case Parse.Errors():
-                        input.rewind(before_separator)
-                    case Parse.NoMatch():
-                        input.rewind(before_separator)
-                    case _:
-                        ...
-            elif len(items) > 0:
-                match self.separator(input):
-                    case Parse.Match():
-                        ...
-                    case Parse.NoMatch() | Parse.Errors() as errors if len(
-                        items
-                    ) < self._at_least:
-                        input.rewind(before_separator)
-                        return errors
-                    case Parse.NoMatch() | Parse.Errors():
-                        input.rewind(before_separator)
-                        return Parse.Match(items)
+            match self.separator(input):
+                case Parse.Match():
+                    ...
+                case Parse.NoMatch():
+                    input.rewind(before_separator)
+                    break
+                case Parse.Errors() as errors:
+                    return errors
 
-            before_item = input.save()
+            after_separator = input.save()
+
             match self.parser(input):
                 case Parse.Match(item):
                     items.append(item)
-                case (Parse.NoMatch() | Parse.Errors()) as errors if len(
-                    items
-                ) < self._at_least:
-                    input.rewind(before_separator)
-                    return errors
-                case Parse.NoMatch() | Parse.Errors() as errors:
+                case Parse.NoMatch():
                     if self._allow_trailing:
-                        input.rewind(before_item)
-                    else:
-                        input.rewind(before_separator)
-                    return Parse.Match(items)
+                        input.rewind(after_separator)
+                    break
+                case Parse.Errors() as errors:
+                    if self._allow_trailing:
+                        input.rewind(after_separator)
+                        break
+
+                    return errors
+
+        if len(items) < self._at_least:
+            return Parse.NoMatch()
+        return Parse.Match(items)
+
+    def allow_empty(self) -> t.Self:
+        other = copy.copy(self)
+        other._allow_empty = True
+        return other
 
     def allow_leading(self) -> t.Self:
         other = copy.copy(self)
@@ -364,8 +383,10 @@ class Repeated[T](Parser[list[T]]):
     @t.override
     def parse(self, input: TokenStream) -> Parse.Result[list[T]]:
         items = list[T]()
+
         while True:
             saved = input.save()
+
             match self.parser(input):
                 case Parse.Match(item):
                     items.append(item)
@@ -375,10 +396,7 @@ class Repeated[T](Parser[list[T]]):
                         return Parse.NoMatch()
                     return Parse.Match(items)
                 case Parse.Errors() as errors:
-                    input.rewind(saved)
-                    if len(items) < self._at_least:
-                        return errors
-                    return Parse.Match(items)
+                    return errors
 
     def at_least(self, minimum: int) -> t.Self:
         other = copy.copy(self)

@@ -147,17 +147,17 @@ class TestAlternative:
         second = opyl.Primitive(Span.default(), PrimitiveKind.Hyphen)
 
         tokens = TokenStream([first, second])
-        parser = just(PrimitiveKind.Hyphen) | just(PrimitiveKind.Hyphen)
+        parser = just(PrimitiveKind.Hyphen) | just(PrimitiveKind.Plus)
 
         result = parser(tokens)
-        assert isinstance(result, Parse.Match) and result.item is second
+        assert isinstance(result, Parse.Match) and result.item is first
 
     def test_neither_match(self):
         first = opyl.Primitive(Span.default(), PrimitiveKind.Plus)
         second = opyl.Primitive(Span.default(), PrimitiveKind.Hyphen)
 
         tokens = TokenStream([first, second])
-        parser = just(PrimitiveKind.Hyphen) | just(PrimitiveKind.Plus)
+        parser = just(PrimitiveKind.Hyphen) | just(PrimitiveKind.Hyphen)
 
         result = parser(tokens)
         assert isinstance(result, Parse.NoMatch)
@@ -182,13 +182,13 @@ class TestAlternative:
         second = opyl.Primitive(Span.default(), PrimitiveKind.Hyphen)
 
         tokens = TokenStream([first, second])
-        parser = just(PrimitiveKind.Hyphen) | just(PrimitiveKind.Plus).expect(
-            expectation
+        parser = just(PrimitiveKind.Hyphen) | (
+            just(PrimitiveKind.Hyphen).expect(expectation)
         )
 
         result = parser(tokens)
         assert isinstance(result, Parse.Errors) and len(result.errors) == 1
-        assert result.errors[0] == (1, expectation)
+        assert result.errors[0] == (0, expectation)
 
 
 class TestIgnoreThen:
