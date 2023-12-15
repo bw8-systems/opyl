@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from enum import Enum
 from abc import ABC, abstractmethod
 
-from compile.lexemes import PrimitiveKind, Primitive, Token
+from compile.lex import PrimitiveKind, Token
 
 
 @dataclass
@@ -84,21 +84,9 @@ class BinaryOperator(Enum):
     def values(cls) -> set[PrimitiveKind]:
         return {member.value for member in cls}
 
-    @t.overload
     @classmethod
-    def is_binary_op(cls, any: Token) -> t.TypeGuard[Primitive]:
-        ...
-
-    @t.overload
-    @classmethod
-    def is_binary_op(cls, any: PrimitiveKind) -> bool:
-        ...
-
-    @classmethod
-    def is_binary_op(cls, any: Token | PrimitiveKind) -> t.TypeGuard[Primitive] | bool:
-        if isinstance(any, PrimitiveKind) and any in cls.values():
-            return True
-        return isinstance(any, Primitive) and any.kind in cls.values()
+    def is_binary_op(cls, any: Token) -> t.TypeGuard[PrimitiveKind] | bool:
+        return isinstance(any, PrimitiveKind) and any in cls
 
 
 class PrefixOperator(Enum):
@@ -110,34 +98,8 @@ class PrefixOperator(Enum):
         return 6
 
     @classmethod
-    def values(cls) -> set[PrimitiveKind]:
-        return {member.value for member in cls}
-
-    @t.overload
-    @classmethod
-    def is_prefix_op(cls, any: Token) -> t.TypeGuard[Primitive]:
-        ...
-
-    @t.overload
-    @classmethod
-    def is_prefix_op(cls, any: PrimitiveKind) -> bool:
-        ...
-
-    @classmethod
-    def is_prefix_op(cls, any: Token | PrimitiveKind) -> t.TypeGuard[Primitive] | bool:
-        if isinstance(any, PrimitiveKind) and any in cls.values():
-            return True
-        return isinstance(any, Primitive) and any.kind in cls.values()
-
-
-# PRECEDENCE_TABLE = (
-#     (InfixOperator.ScopeResolution,),
-#     (InfixOperator.Invocation, InfixOperator.Subscript),
-#     (BinaryOperator.Multiplication, BinaryOperator.Division),
-#     (BinaryOperator.Addition, BinaryOperator.Subtraction),
-#     (BinaryOperator.GreaterThan, BinaryOperator.LessThan),
-#     (BinaryOperator.Equality),
-# )
+    def is_prefix_op(cls, any: Token) -> t.TypeGuard[PrimitiveKind] | bool:
+        return isinstance(any, PrimitiveKind) and any in cls
 
 
 @dataclass

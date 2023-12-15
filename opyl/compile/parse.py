@@ -6,8 +6,8 @@ from compile import nodes
 from compile import lex
 from compile.lexemes import KeywordKind as KK
 from compile.lexemes import PrimitiveKind as PK
+from compile.positioning import Stream
 from compile.combinators import (
-    TokenStream,
     Parser,
     Parse,
     just,
@@ -119,9 +119,9 @@ func_sig = (
 )
 
 
-class Statement(Parser[nodes.Statement]):
+class Statement(Parser[lexemes.Token, nodes.Statement]):
     @t.override
-    def parse(self, input: TokenStream) -> Parse.Result[nodes.Statement]:
+    def parse(self, input: Stream[lexemes.Token]) -> Parse.Result[nodes.Statement]:
         return (
             return_stmt
             | if_stmt
@@ -321,12 +321,12 @@ decl = (
 decls = newlines.ignore_then(decl.separated_by(newlines.at_least(1)))
 
 
-def split_stream(stream: TokenStream) -> list[tuple[int, int]]:
+def split_stream(stream: Stream[lexemes.Token]) -> list[tuple[int, int]]:
     nesting_level = 0
     delimiters = list[tuple[int, int]]()
     start = 0
 
-    for idx, token in enumerate(stream.tokens):
+    for idx, token in enumerate(stream.items):
         match token:
             case lexemes.Primitive(_, PK.LeftBrace):
                 nesting_level += 1
@@ -344,7 +344,7 @@ def split_stream(stream: TokenStream) -> list[tuple[int, int]]:
 def parse(source: str) -> ...:
     tokens = lex.tokenize(source)
 
-    stream = TokenStream(
+    stream = Stream[lexemes.Token](
         list(
             filter(
                 lambda token: not (
@@ -367,8 +367,8 @@ def parse(source: str) -> ...:
     #     ]
     # )
 
-    print(stream.tokens[first[1]])
-    pprint(decls.parse(TokenStream(stream.tokens[first[0] : first[1] + 1])))
+    print(stream.items[first[1]])
+    pprint(decls.parse(Stream[lexemes.Token](stream.items[first[0] : first[1] + 1])))
     # success = 0
     # for pair in pairs:
     #     result = decls.parse(TokenStream(stream.tokens[pair[0] : pair[1]]))

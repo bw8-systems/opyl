@@ -1,194 +1,165 @@
 import typing as t
+from dataclasses import dataclass
+from enum import Enum, auto
 
-from compile import lexemes
-from compile.positioning import TextStream, Span
-from compile import errors
-
-type Predicate[T] = t.Callable[[T], bool]
-type Scanner = t.Callable[[], lexemes.Token]
+from compile.errors import LexError
+from combinator.combinators import Filter, Just, filter, one_of
 
 
-class Tokenizer:
-    def __init__(self, data: str):
-        self.stream = TextStream(data)
-
-    def next_token(self) -> lexemes.Token:
-        current = self.stream.current()
-        scanners_and_predicates: list[tuple[Scanner, Predicate[str]]] = [
-            (self.tokenize_whitespace, lambda char: char in {" ", "\r", "\t"}),
-            (self.tokenize_comment, lambda char: char == "#"),
-            (self.tokenize_string, lambda char: char == '"'),
-            (self.tokenize_character, lambda char: char == "'"),
-            (self.tokenize_integer, str.isdigit),
-            (self.tokenize_identifier_or_keyword, str.isalpha),
-            (self.tokenize_primitive, lambda _char: True),
-        ]
-
-        for scanner, predicate in scanners_and_predicates:
-            if predicate(current):
-                return scanner()
-
-        raise errors.IllegalCharacter(current)
-
-    def take_while(self, predicate: Predicate[str]) -> str:
-        start = self.stream.index.copy()
-
-        for char in self.stream:
-            if not predicate(char):
-                break
-
-            self.stream.advance(newline=char == "\n")
-
-        if self.stream.index == start:
-            self.stream.index = start
-            raise errors.NoMatch(self.stream.current())
-
-        return self.stream.text[start.absolute : self.stream.index.absolute]
-
-    def tokenize_primitive(self):
-        start = self.stream.index.copy()
-
-        for kind in lexemes.PrimitiveKind:
-            lexeme = kind.value
-
-            if self.stream.startswith(lexeme):
-                self.stream.advance_for(lexeme)
-
-                return lexemes.Primitive(
-                    span=Span(
-                        start=start,
-                        stop=self.stream.index.copy(),
-                    ),
-                    kind=lexemes.PrimitiveKind(lexeme),
-                )
-
-        raise errors.UnexpectedCharacter(self.stream.current())
-
-    def tokenize_whitespace(self) -> lexemes.Whitespace:
-        start = self.stream.index.copy()
-
-        self.take_while(lambda char: char in {" ", "\r", "\t"})
-        return lexemes.Whitespace(span=Span(start=start, stop=self.stream.index.copy()))
-
-    def tokenize_comment(self) -> lexemes.Comment:
-        start = self.stream.index.copy()
-        current = self.stream.current()
-        if current == "":
-            raise errors.UnexpectedEOF()
-
-        if current != "#":
-            raise errors.UnexpectedCharacter(current)
-
-        self.stream.advance(newline=False)
-        try:
-            comment = self.take_while(lambda char: char != "\n")
-        except errors.NoMatch:
-            comment = ""
-
-        return lexemes.Comment(
-            span=Span(start=start, stop=self.stream.index.copy()), comment=comment
-        )
-
-    def tokenize_integer(self) -> lexemes.IntegerLiteral:
-        start = self.stream.index.copy()
-
-        try:
-            integer_string = self.take_while(str.isdigit)
-        except errors.NoMatch:
-            raise errors.UnexpectedCharacter(self.stream.current())
-
-        return lexemes.IntegerLiteral(
-            span=Span(start=start, stop=self.stream.index.copy()),
-            integer=int(integer_string),
-        )
-
-    def tokenize_identifier_or_keyword(self) -> lexemes.Identifier | lexemes.Keyword:
-        start = self.stream.index.copy()
-        current = self.stream.current()
-        if current == lexemes.PrimitiveKind.Eof.value:
-            raise errors.UnexpectedEOF()
-
-        if not (current.isalpha() or current == "_"):
-            raise errors.UnexpectedCharacter(current)
-
-        name = self.take_while(
-            lambda char: char == "_" or char.isalpha() or char.isalnum()
-        )
-
-        span = Span(start=start, stop=self.stream.index.copy())
-        try:
-            return lexemes.Keyword(span=span, kind=lexemes.KeywordKind(name))
-        except ValueError:
-            return lexemes.Identifier(span=span, identifier=name)
-
-    def tokenize_string(self):
-        start = self.stream.index.copy()
-        current = self.stream.current()
-        if current == "":
-            raise errors.UnexpectedEOF()
-
-        if current != '"':
-            raise errors.UnexpectedCharacter(current)
-
-        self.stream.advance(newline=False)
-        for char in self.stream:
-            if char == "\n":
-                self.stream.index = start
-                raise errors.UnexpectedCharacter(char)
-
-            self.stream.advance(newline=False)
-
-            if char == '"':
-                return lexemes.StringLiteral(
-                    span=Span(start=start, stop=self.stream.index.copy()),
-                    string=self.stream.text[
-                        start.absolute + 1 : self.stream.index.absolute - 1
-                    ],
-                )
-
-        raise errors.UnclosedStringLiteral(
-            self.stream.text[start.absolute : self.stream.index.absolute]
-        )
-
-    def tokenize_character(self) -> lexemes.CharacterLiteral:
-        start = self.stream.index.copy()
-        current = self.stream.current()
-        if current is lexemes.PrimitiveKind.Eof.value:
-            raise errors.UnexpectedEOF()
-
-        if current != "'":
-            raise errors.UnexpectedCharacter(current)
-
-        self.stream.advance(newline=False)
-        char = self.stream.current()
-
-        self.stream.advance(newline=False)
-        closing = self.stream.current()
-        self.stream.advance(newline=False)
-        if closing != "'":
-            raise errors.UnexpectedCharacter(closing)
-
-        return lexemes.CharacterLiteral(
-            span=Span(
-                start=start,
-                stop=self.stream.index.copy(),
-            ),
-            char=char,
-        )
+class KeywordKind(Enum):
+    Trait = "trait"
+    Enum = "enum"
+    Struct = "struct"
+    Union = "union"
+    Let = "let"
+    Const = "const"
+    Def = "def"
+    Meth = "meth"
+    While = "while"
+    For = "for"
+    In = "in"
+    If = "if"
+    Else = "else"
+    When = "when"
+    Is = "is"
+    As = "as"
+    Return = "return"
+    Break = "break"
+    Continue = "continue"
+    Char = "char"
+    Mut = "mut"
+    Anon = "anon"
 
 
-def tokenize(source: str) -> list[lexemes.Token]:
-    scanner = Tokenizer(source)
-    tokenized = list[lexemes.Token]()
+class PrimitiveKind(Enum):
+    Plus = "+"
+    RightArrow = "->"
+    Hyphen = "-"
+    Asterisk = "*"
+    ForwardSlash = "/"
+    Caret = "^"
+    Percent = "%"
+    At = "@"
+    Ampersand = "&"
+    Exclamation = "!"
+    ColonColon = "::"
+    Colon = ":"
+    EqualEqual = "=="
+    Equal = "="
+    LeftBrace = "{"
+    RightBrace = "}"
+    LeftParenthesis = "("
+    RightParenthesis = ")"
+    LeftAngle = "<"
+    RightAngle = ">"
+    LeftBracket = "["
+    RightBracket = "]"
+    Comma = ","
+    Period = "."
+    Pipe = "|"
+    NewLine = "\n"
+    Eof = ""
 
-    while True:
-        token = scanner.next_token()
-        if (
-            isinstance(token, lexemes.Primitive)
-            and token.kind is lexemes.PrimitiveKind.Eof
-        ):
-            break
 
-        tokenized.append(token)
+class TokenKind(Enum):
+    Keyword = auto()
+    Primitive = auto()
+    Identifier = auto()
+    Integer = auto()
+    String = auto()
+    Character = auto()
+    Whitespace = auto()
+    Comment = auto()
 
-    return tokenized
+
+Whitespace: t.Final[t.Literal[TokenKind.Whitespace]] = TokenKind.Whitespace
+
+
+@dataclass(unsafe_hash=True, frozen=True)
+class Identifier:
+    identifier: str
+
+
+@dataclass
+class StringLiteral:
+    string: str
+
+
+@dataclass
+class IntegerLiteral:
+    integer: int
+
+
+@dataclass
+class Comment:
+    comment: str
+
+
+@dataclass
+class CharacterLiteral:
+    char: str
+
+
+type Token = (
+    PrimitiveKind
+    | Identifier
+    | IntegerLiteral
+    | KeywordKind
+    | StringLiteral
+    | t.Literal[TokenKind.Whitespace]
+    | Comment
+    | CharacterLiteral
+)
+
+
+LexFilter = Filter[str, LexError]
+LexJust = Just[str, LexError]
+
+integer = (
+    (
+        LexFilter(lambda char: str.isdigit(char) and char != "0")
+        .chain(filter(str.isdigit).repeated())
+        .map(lambda chars: int("".join(chars)))
+    )
+    | Just("0").map(int)
+).map(lambda either: IntegerLiteral(either.item))
+
+
+identifier = (
+    LexFilter(lambda char: char.isalpha() or char == "_")
+    .chain(LexFilter(lambda char: char.isalnum() or char == "_").repeated())
+    .map(lambda chars: "".join(chars))
+).map(Identifier)
+
+keyword = identifier.and_check(lambda ident: ident in KeywordKind).map(
+    lambda char: KeywordKind(char)
+)
+
+basic = one_of("+-*/{}").map(lambda char: PrimitiveKind(char))
+
+string = (
+    LexJust('"')
+    .ignore_then(LexFilter(lambda char: char not in {"\n", '"'}).repeated())
+    .then_ignore(LexJust('"').require(LexError.UnterminatedStringLiteral))
+    .map(lambda chars: "".join(chars))
+).map(StringLiteral)
+
+character = (
+    LexJust("'")
+    .ignore_then(LexFilter(lambda char: char != "'"))
+    .then_ignore(LexJust("'").require(LexError.UnexpectedCharacter))
+).map(CharacterLiteral)
+
+whitespace = LexJust(" ").then(filter(str.isspace).repeated()).map(lambda _: Whitespace)
+
+comment = (
+    LexJust("#")
+    .ignore_then(LexFilter(lambda char: char != "\n").repeated())
+    .map(lambda chars: "".join(chars))
+).map(Comment)
+
+token = (
+    integer | identifier | keyword | basic | string | character | comment | whitespace
+)
+
+tokenizer = token.repeated()
