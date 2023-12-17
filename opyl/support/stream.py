@@ -1,7 +1,7 @@
 import typing as t
 from dataclasses import dataclass
 
-from support.unions import Maybe
+from opyl.support.union import Maybe
 
 
 @dataclass

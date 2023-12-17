@@ -31,19 +31,3 @@ class Result:
         item: E
 
     type Type[T, E] = Ok[T] | Err[E]
-
-
-class Either:
-    class Kind(Enum):
-        Left = 0
-        Right = 1
-
-    @dataclass
-    class Left[L]:
-        item: L
-
-    @dataclass
-    class Right[R]:
-        item: R
-
-    type Type[L, R] = Left[L] | Right[R]

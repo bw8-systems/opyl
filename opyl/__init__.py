@@ -1,6 +1,6 @@
-from compile import pratt
-from compile import lex
-from compile import parse
-from compile import nodes
-from compile import errors
-from compile import combinators
+from opyl.compile import ast
+from opyl.compile import error
+from opyl.compile import lex
+from opyl.compile import token
+
+_ = ast, error, lex, token

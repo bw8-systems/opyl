@@ -4,8 +4,8 @@ from abc import ABC, abstractmethod
 import copy
 from enum import Enum
 
-from support.streams import Stream
-from support.unions import Maybe, Either
+from opyl.support.stream import Stream
+from opyl.support.union import Maybe
 
 
 class ParseResult:
@@ -126,19 +126,17 @@ class Require[In, Out, Err](Parser[In, Out, Err]):
 
 
 @dataclass
-class Alternative[In, FirstOut, SecondOut, Err](
-    Parser[In, Either.Type[FirstOut, SecondOut], Err]
-):
+class Alternative[In, FirstOut, SecondOut, Err](Parser[In, FirstOut | SecondOut, Err]):
     first_choice: Parser[In, FirstOut, Err]
     second_choice: Parser[In, SecondOut, Err]
 
     @t.override
     def parse(
         self, input: Stream[In]
-    ) -> ParseResult.Type[In, Either.Type[FirstOut, SecondOut], Err]:
+    ) -> ParseResult.Type[In, FirstOut | SecondOut, Err]:
         match self.first_choice.parse(input):
             case PR.Match(item, pos):
-                return PR.Match(Either.Left(item), pos)
+                return PR.Match(item, pos)
             case PR.NoMatch:
                 ...
             case PR.Error() as errors:
@@ -146,7 +144,7 @@ class Alternative[In, FirstOut, SecondOut, Err](
 
         match self.second_choice.parse(input):
             case PR.Match(item, pos):
-                return PR.Match(Either.Right(item), pos)
+                return PR.Match(item, pos)
             case PR.NoMatch:
                 return PR.NoMatch
             case PR.Error() as errors:

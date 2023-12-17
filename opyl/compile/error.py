@@ -10,4 +10,4 @@ class LexError(enum.Enum):
 
 
 class ParseError(enum.Enum):
-    ...
+    ToBeImproved = enum.auto()

@@ -5,7 +5,7 @@ from opyl.compile.parse import field
 from opyl import combinators as comb
 from opyl import lexemes
 from opyl import lex
-from opyl import nodes
+from opyl import ast
 
 # TODO: Move into tests below.
 # source = "def ident(anon ident: mut Type)"
@@ -40,13 +40,13 @@ class TestConstDecl:
         assert isinstance(result, comb.Parse.Match)
 
         const = result.item
-        assert isinstance(const, nodes.ConstDeclaration)
+        assert isinstance(const, ast.ConstDeclaration)
         assert const.name.name == "ident"
 
-        assert isinstance(const.type, nodes.Identifier)
+        assert isinstance(const.type, ast.Identifier)
         assert const.type.name == "Type"
 
-        assert isinstance(const.initializer, nodes.Identifier)
+        assert isinstance(const.initializer, ast.Identifier)
         assert const.initializer.name == "expr"
 
     @pytest.mark.parametrize(
@@ -74,9 +74,9 @@ class TestLetDecl:
 
         assert item.is_mut is True
         assert item.name.name == ident
-        assert isinstance(item.type, nodes.Identifier) and item.type.name == type
+        assert isinstance(item.type, ast.Identifier) and item.type.name == type
         assert (
-            isinstance(item.initializer, nodes.Identifier)
+            isinstance(item.initializer, ast.Identifier)
             and item.initializer.name == expr
         )
 
@@ -93,9 +93,9 @@ class TestLetDecl:
 
         assert item.is_mut is False
         assert item.name.name == ident
-        assert isinstance(item.type, nodes.Identifier) and item.type.name == type
+        assert isinstance(item.type, ast.Identifier) and item.type.name == type
         assert (
-            isinstance(item.initializer, nodes.Identifier)
+            isinstance(item.initializer, ast.Identifier)
             and item.initializer.name == expr
         )
 
@@ -191,7 +191,7 @@ class TestFunctionSignature:
         assert param.is_anon is True
         assert param.is_mut is True
 
-        assert isinstance(item.return_type, nodes.Identifier)
+        assert isinstance(item.return_type, ast.Identifier)
         assert item.return_type.name == "ReturnType"
 
     def test_valid_signature_multi_param(self):

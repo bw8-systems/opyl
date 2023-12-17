@@ -1,6 +1,5 @@
 import typing as t
 from opyl.compile.lex import (
-    Token,
     IntegerLiteral,
     Identifier,
     StringLiteral,
@@ -10,8 +9,10 @@ from opyl.compile.lex import (
     string,
     character,
 )
-from opyl.combinator.combinators import ParseResult, Parser
-from opyl.support.streams import Stream
+from opyl.compile.token import Token
+
+from opyl.support.combinator import ParseResult, Parser
+from opyl.support.stream import Stream
 
 
 class TestIntegerLiteral:
@@ -96,6 +97,7 @@ def parse_test(
             ), "Parser did not produce a match when it was expected to."
         case ParseResult.Error(err):
             panic(f"Parser produced an error when it wasn't expected to: {err}")
+
 
 # TODO! For verifying errors rather than just Match and NoMatch
 def parse_test_err():
