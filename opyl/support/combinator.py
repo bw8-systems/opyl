@@ -63,6 +63,17 @@ class Parser[In, Out, Err](ABC):
         return ThenIgnore(self, other)
 
     @t.final
+    def then_with_ctx[
+        SecondOut
+    ](
+        self,
+        other_func: t.Callable[
+            [tuple[Out, Stream[In]]], ParseResult.Type[In, SecondOut, Err]
+        ],
+    ) -> "ThenWithContext[In, Out, SecondOut, Err]":
+        return ThenWithContext(self, other_func)
+
+    @t.final
     def separated_by[
         U
     ](self, separator: "Parser[In, U, Err]") -> "SeparatedBy[In, Out, U, Err]":
@@ -175,6 +186,41 @@ class Then[In, FirstOut, SecondOut, Err](Parser[In, tuple[FirstOut, SecondOut], 
                 return PR.Match((first_result.item, second_item), pos)
             case no_match_or_err:
                 return no_match_or_err
+
+
+@dataclass
+class ThenWithContext[In, Context, SecondOut, Err](
+    Parser[In, tuple[Context, SecondOut], Err]
+):
+    first: Parser[In, Context, Err]
+    second: t.Callable[
+        [tuple[Context, Stream[In]]], ParseResult.Type[In, SecondOut, Err]
+    ]
+
+    @t.override
+    def parse(
+        self, input: Stream[In]
+    ) -> ParseResult.Type[In, tuple[Context, SecondOut], Err]:
+        first_result = self.first.parse(input)
+
+        match first_result:
+            case PR.Match():
+                ...
+            case PR.NoMatch as nm:
+                return nm
+            case PR.Error() as err:
+                return err
+
+        context = first_result.item
+        first_pos = first_result.remaining
+
+        match self.second((context, first_pos)):
+            case PR.Match(second_item, pos):
+                return PR.Match((context, second_item), pos)
+            case PR.NoMatch as nm:
+                return nm
+            case PR.Error() as err:
+                return err
 
 
 @dataclass
@@ -330,13 +376,13 @@ class OrElse[In, Out, Err](Parser[In, Out, Err]):
 @dataclass
 class Map[In, Out, Mapped, Err](Parser[In, Mapped, Err]):
     parser: Parser[In, Out, Err]
-    func: t.Callable[[Out], Mapped]
+    mapper: t.Callable[[Out], Mapped]
 
     @t.override
     def parse(self, input: Stream[In]) -> ParseResult.Type[In, Mapped, Err]:
         match self.parser.parse(input):
             case PR.Match(item, pos):
-                return PR.Match(self.func(item), pos)
+                return PR.Match(self.mapper(item), pos)
             case no_match_or_err:
                 return no_match_or_err
 

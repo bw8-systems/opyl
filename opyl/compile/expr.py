@@ -4,35 +4,41 @@ from enum import Enum
 
 from compile.token import Basic, Identifier, IntegerLiteral, Token
 
-type Expression = (
-    Identifier
-    | IntegerLiteral
-    | PrefixExpression
-    | BinaryExpression
-    | CallExpression
-    | SubscriptExpression
-)
+type InfixExpression = BinaryExpression | CallExpression | SubscriptExpression
+
+type Expression = (Identifier | IntegerLiteral | PrefixExpression | InfixExpression)
 
 
 class InfixOperator(Enum):
     FunctionApply = Basic.LeftParenthesis
     Subscript = Basic.LeftBracket
     MemberAccess = Basic.Period
-    ScopeResolve = Basic.ColonColon
+    ScopeResolve = Basic.Colon2
 
 
-class BinaryOperator(Enum):
+class BinOp(Enum):
     Addition = Basic.Plus
     Subtraction = Basic.Hyphen
     Multiplication = Basic.Asterisk
     Division = Basic.ForwardSlash
     Exponentiation = Basic.Caret
-    Equality = Basic.EqualEqual
+    Equal = Basic.Equal2
+    NotEqual = Basic.BangEqual
 
     GreaterThan = Basic.RightAngle
+    GreaterEqual = Basic.RightAngleEqual
     LessThan = Basic.LeftAngle
+    LessEqual = Basic.LeftAngleEqual
 
-    ScopeResolution = Basic.ColonColon
+    ScopeResolution = Basic.Colon2
+    BitwiseAND = Basic.Ampersand
+    BitwiseOR = Basic.Pipe
+
+    LogicalAND = Basic.Ampersand2
+    LogicalOR = Basic.Pipe2
+
+    LeftShift = Basic.LeftAngle2
+    RightShift = Basic.RightAngle2
 
     def precedence(self) -> int:
         return {
@@ -43,8 +49,8 @@ class BinaryOperator(Enum):
             self.Exponentiation: 3,
             self.GreaterThan: 6,
             self.LessThan: 6,
-            self.Equality: 7,
-            self.ScopeResolution: 12,
+            self.Equal: 7,
+            self.ScopeResolution: 12,  # TODO: Remove
         }[self]
 
     def is_right_associative(self) -> bool:
@@ -56,9 +62,17 @@ class BinaryOperator(Enum):
             self.Exponentiation: True,
             self.GreaterThan: False,
             self.LessThan: False,
-            self.Equality: False,
+            self.Equal: False,
             self.ScopeResolution: False,
         }[self]
+
+    def adjusted_precedence(self) -> int:
+        adjusted = self.precedence()
+
+        if self.is_right_associative():
+            adjusted -= 1
+
+        return adjusted
 
     @classmethod
     def values(cls) -> set[Basic]:
@@ -72,7 +86,10 @@ class BinaryOperator(Enum):
 class PrefixOperator(Enum):
     ArithmeticPlus = Basic.Plus
     ArithmeticMinus = Basic.Hyphen
-    LogicalNegate = Basic.Exclamation
+    LogicalNegate = Basic.Bang
+    BitwiseNOT = Basic.Tilde
+    DeReference = Basic.At
+    AddressOf = Basic.Ampersand
 
     def precedence(self) -> int:
         return 6
@@ -84,7 +101,7 @@ class PrefixOperator(Enum):
 
 @dataclass
 class BinaryExpression:
-    operator: BinaryOperator
+    operator: BinOp
     left: Expression
     right: Expression
 
@@ -105,3 +122,30 @@ class SubscriptExpression:
 class PrefixExpression:
     operator: PrefixOperator
     expr: Expression
+
+
+# Rows ordered by INCREASING precedence
+PRECEDENCE = [
+    # Scope Resolution
+    [InfixOperator.FunctionApply, InfixOperator.Subscript, InfixOperator.MemberAccess],
+    [
+        PrefixOperator.LogicalNegate,
+        PrefixOperator.BitwiseNOT,
+        PrefixOperator.DeReference,
+        PrefixOperator.AddressOf,
+    ],
+    [BinOp.Multiplication, BinOp.Division],
+    [BinOp.Addition, BinOp.Subtraction],
+    [BinOp.LeftShift, BinOp.RightShift],
+    [
+        BinOp.LessThan,
+        BinOp.GreaterThan,
+        BinOp.LessEqual,
+        BinOp.GreaterEqual,
+    ],
+    [BinOp.Equal, BinOp.NotEqual],
+    [BinOp.BitwiseAND],
+    [BinOp.BitwiseOR],
+    [BinOp.LogicalAND],
+    [BinOp.LogicalOR],
+]

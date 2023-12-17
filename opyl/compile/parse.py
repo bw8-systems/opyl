@@ -2,17 +2,13 @@ import typing as t
 
 from compile import token
 from compile import ast
-
-from compile import token
 from compile.token import Token, Keyword, Basic
-
 from compile.error import ParseError
+from compile.pratt import expression
 from support.stream import Stream
-from support.combinator import Parser, ParseResult, Just, Filter
+from support.combinator import Parser, ParseResult
 from support.union import Maybe
-
-just = Just[Token, ParseError]
-filt = Filter[Token, ParseError]
+from support.atoms import just, ident
 
 newlines = just(Basic.NewLine).repeated()
 
@@ -25,16 +21,8 @@ def block[T](item: Parser[Token, T, ParseError]) -> Parser[Token, list[T], Parse
     )
 
 
-ident = filt(lambda tok: isinstance(tok, token.Identifier)).map(
-    lambda tok: t.cast(token.Identifier, tok)
-)
-integer = filt(lambda tok: isinstance(tok, token.IntegerLiteral)).map(
-    lambda tok: t.cast(token.IntegerLiteral, tok)
-)
-
 type = ident
-expr = (ident | integer).map(lambda item: t.cast(ast.Expression, item))
-
+expr = expression(0)
 
 field = (
     ident.then(

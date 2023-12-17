@@ -1,155 +1,123 @@
 import typing as t
 from dataclasses import dataclass
 
+from compile.token import Token, Basic
 from compile.error import ParseError
+from compile import expr
 from compile.expr import (
-    Expression,
-    PrefixOperator,
-    BinaryOperator,
     BinaryExpression,
-    PrefixExpression,
-    SubscriptExpression,
+    BinOp,
     CallExpression,
+    InfixExpression,
+    PrefixOperator,
+    SubscriptExpression,
+    PrefixExpression,
 )
-from support.combinator import Parser, ParseResult
+from support.combinator import PR, Parser, ParseResult
 from support.stream import Stream
-from support.span import Span
+from support.atoms import just, filt, ident, integer, identity
 
-from compile.token import (
-    Token,
-    Identifier,
-    IntegerLiteral,
-    Basic,
-)
+
+# TODO: Move into expr.py once precedence solution has been decided on.
+def check_precedence(input: Stream[Token]) -> int:
+    match input.peek():
+        case op if op in BinOp:
+            return BinOp(op).precedence()
+        case paren if paren is Basic.LeftParenthesis:
+            return 8
+        case brack if brack is Basic.LeftBracket:
+            return 8
+        case _:
+            return 0
 
 
 @dataclass
-class ExpressionParser(Parser[Token, Expression, ParseError]):
+class Expression(Parser[Token, expr.Expression, ParseError]):
+    precedence: int
+
     @t.override
     def parse(
         self, input: Stream[Token]
-    ) -> ParseResult.Type[Token, Expression, ParseError]:
-        return self.expression(input, 0)
+    ) -> ParseResult.Type[Token, expr.Expression, ParseError]:
+        match prefix_parser.parse(input):
+            case PR.Match(left, pos):
+                ...
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error(err):
+                return PR.Error(err)
 
-    def expression(
-        self, input: Stream[Token], precedence: int
-    ) -> ParseResult.Type[Token, Expression, ParseError]:
-        match input.next():
-            case Basic(span, Basic.LeftParenthesis):
-                left = self.grouped_expression(input)
-            case Basic(span, kind) if PrefixOperator.is_prefix_op(kind):
-                prefix_operator = PrefixOperator(kind)
-                left = self.prefix_operator_expression(input, prefix_operator, span)
-            case Identifier(_, name):
-                left = Identifier(name)
-            case IntegerLiteral(_, integer):
-                left = IntegerLiteral(integer)
-            case _:
-                return ParseResult.NoMatch
+        while self.precedence < check_precedence(pos):
+            match infix_parser(left).parse(input):
+                case PR.Match(expr, pos):
+                    left = expr
+                case PR.NoMatch:
+                    return PR.NoMatch
+                case PR.Error(err):
+                    return PR.Error(err)
 
-        while precedence < self.check_precedence(input):
-            match input.next():
-                case Basic(span, kind) if BinaryOperator.is_binary_op(kind):
-                    operator = BinaryOperator(kind)
-                    left = self.binary_operator_expression(input, left.item, operator)
-                case Basic(_, Basic.LeftParenthesis):
-                    left = self.call_expression(input, left)
-                case Primitive(_, Basic.LeftBracket):
-                    left = self.subscript_expression(input, left)
-                case _:
-                    return ParseResult.NoMatch
+        return PR.NoMatch
 
-        return ParseResult.Match(left)
 
-    def check_precedence(self, input: Stream[Token]) -> int:
-        match input.peek():
-            case Basic(_, kind) if BinaryOperator.is_binary_op(kind):
-                return BinaryOperator(kind).precedence()
-            case Basic(_, Basic.LeftParenthesis):
-                # TODO: How to represent precedence levels cleanly?
-                # For now, just a high precedence level to bind calls tightly.
-                return 8
-            case Basic(_, Basic.LeftBracket):
-                return 8
-            case _:
-                return 0
+def expression(precedence: int) -> Expression:
+    return Expression(precedence)
 
-    def prefix_operator_expression(
-        self,
-        input: Stream[Token],
-        operator: PrefixOperator,
-        start_span: Span,
-    ) -> Expression:
-        right = self.expression(input, operator.precedence())
-        return PrefixExpression(
-            span=start_span + right.span, operator=operator, expr=right
+
+grouped_expr = expression(0).then_ignore(just(Basic.RightParenthesis))
+
+
+def bin_op_expr(left: expr.Expression) -> Parser[Token, BinaryExpression, ParseError]:
+    return (
+        filt(lambda tok: tok in BinOp)
+        .map(lambda op: BinOp(op))
+        .map(lambda op: (op, op.adjusted_precedence()))
+        .then_with_ctx(
+            lambda op_prec_inp: expression(op_prec_inp[0][1]).parse(op_prec_inp[1])
         )
-
-    def binary_operator_expression(
-        self,
-        input: Stream[Token],
-        left: Expression,
-        operator: BinaryOperator,
-    ) -> Expression:
-        precedence = operator.precedence()
-        if operator.is_right_associative():
-            precedence -= 1
-
-        right = self.expression(input, precedence)
-        return BinaryExpression(
-            span=left.span + right.span, operator=operator, left=left, right=right
-        )
-
-    def grouped_expression(self, input: Stream[Token]) -> ParseResult.Type[Expression]:
-        left = self.parse(input)
-        closing = input.next()
-        assert closing is Basic.RightParenthesis
-        return left
-
-    def call_expression(
-        self, input: Stream[Token], function: Expression
-    ) -> ParseResult.Type[Expression]:
-        maybe_right_paren = self.maybe(
-            comb.PrimitiveTerminal(self.tokens, PrimitiveKind.RightParenthesis)
-        ).parse()
-
-        if maybe_right_paren is not None:
-            return CallExpression(
-                span=function.span + maybe_right_paren.span,
-                function=function,
-                arguments=[],
+        .map(
+            lambda op_prec_right: BinaryExpression(
+                op_prec_right[0][0], left, op_prec_right[1]
             )
-
-        arg = self.maybe(self).parse()
-        if arg is None:
-            raise errors.UnexpectedToken()
-
-        args = self.many(
-            comb.PrimitiveTerminal(self.tokens, PrimitiveKind.Comma).consume_before(
-                self
-            )
-        ).parse()
-        args.append(arg)
-
-        right_paren = comb.PrimitiveTerminal(
-            self.tokens, PrimitiveKind.RightParenthesis
-        ).parse()
-
-        return CallExpression(
-            span=function.span + right_paren.span,
-            function=function,
-            arguments=args,
         )
+    )
 
-    def subscript_expression(
-        self, input: Stream[Token], base: Expression
-    ) -> ParseResult.Type[Expression]:
-        index = self.parse(input)
-        closing_brace = comb.PrimitiveTerminal(
-            self.tokens, PrimitiveKind.RightBracket
-        ).parse()
-        return SubscriptExpression(
-            span=base.span + closing_brace.span,
-            base=base,
-            index=index,
-        )
+
+def call_expr(function: expr.Expression) -> Parser[Token, CallExpression, ParseError]:
+    args = (
+        (expression(0).then_ignore(just(Basic.Comma)))
+        .repeated()
+        .then_ignore(just(Basic.RightParenthesis))
+        .map(lambda args: CallExpression(function, args))
+    )
+
+    return identity(Basic.LeftParenthesis).ignore_then(args)
+
+
+def subscript_expr(
+    base: expr.Expression,
+) -> Parser[Token, SubscriptExpression, ParseError]:
+    return (
+        identity(Basic.LeftBracket)
+        .ignore_then(expression(0))
+        .then_ignore(just(Basic.RightBracket))
+        .map(lambda index: SubscriptExpression(base, index))
+    )
+
+
+prefix_op_expr = (
+    filt(lambda op: op in PrefixOperator)
+    .map(lambda op: PrefixOperator(op))
+    .then_with_ctx(lambda op_inp: expression(op_inp[0].precedence()).parse(op_inp[1]))
+    .map(lambda op_right: PrefixExpression(op_right[0], op_right[1]))
+)
+
+prefix_parser = (
+    identity(Basic.LeftParenthesis).ignore_then(grouped_expr)
+    | prefix_op_expr
+    | ident
+    | integer
+)
+
+
+def infix_parser(left: expr.Expression) -> Parser[Token, InfixExpression, ParseError]:
+    return bin_op_expr(left) | call_expr(left) | subscript_expr(left)
