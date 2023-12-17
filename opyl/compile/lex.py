@@ -1,5 +1,5 @@
-from opyl.compile.error import LexError
-from opyl.compile.token import (
+from compile.error import LexError
+from compile.token import (
     IntegerLiteral,
     Keyword,
     Basic,
@@ -9,7 +9,7 @@ from opyl.compile.token import (
     Comment,
     Whitespace,
 )
-from opyl.support.combinator import Filter, Just, filter, one_of
+from support.combinator import Filter, Just, filter, one_of
 
 
 just = Just[str, LexError]

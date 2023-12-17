@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
 
-from opyl.compile.expr import Expression
-from opyl.compile.token import Identifier
-from opyl.support.union import Maybe
+from compile.expr import Expression
+from compile.token import Identifier
+from support.union import Maybe
 
 
 type Statement = (

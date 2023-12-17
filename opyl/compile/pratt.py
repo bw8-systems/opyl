@@ -1,8 +1,8 @@
 import typing as t
 from dataclasses import dataclass
 
-from opyl.compile.error import ParseError
-from opyl.compile.expr import (
+from compile.error import ParseError
+from compile.expr import (
     Expression,
     PrefixOperator,
     BinaryOperator,
@@ -11,11 +11,11 @@ from opyl.compile.expr import (
     SubscriptExpression,
     CallExpression,
 )
-from opyl.support.combinator import Parser, ParseResult
-from opyl.support.stream import Stream
-from opyl.support.span import Span
+from support.combinator import Parser, ParseResult
+from support.stream import Stream
+from support.span import Span
 
-from opyl.compile.token import (
+from compile.token import (
     Token,
     Identifier,
     IntegerLiteral,

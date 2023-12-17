@@ -3,13 +3,13 @@ import typing as t
 from compile import token
 from compile import ast
 
-from opyl.compile import token
-from opyl.compile.token import Token, Keyword, Basic
+from compile import token
+from compile.token import Token, Keyword, Basic
 
-from opyl.compile.error import ParseError
-from opyl.support.stream import Stream
-from opyl.support.combinator import Parser, ParseResult, Just, Filter
-from opyl.support.union import Maybe
+from compile.error import ParseError
+from support.stream import Stream
+from support.combinator import Parser, ParseResult, Just, Filter
+from support.union import Maybe
 
 just = Just[Token, ParseError]
 filt = Filter[Token, ParseError]

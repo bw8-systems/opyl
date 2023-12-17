@@ -1,6 +1,6 @@
-from opyl.compile import ast
-from opyl.compile import error
-from opyl.compile import lex
-from opyl.compile import token
+from compile import ast
+from compile import error
+from compile import lex
+from compile import token
 
 _ = ast, error, lex, token

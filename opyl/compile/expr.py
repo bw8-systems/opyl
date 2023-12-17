@@ -2,7 +2,7 @@ import typing as t
 from dataclasses import dataclass
 from enum import Enum
 
-from opyl.compile.token import Basic, Identifier, IntegerLiteral, Token
+from compile.token import Basic, Identifier, IntegerLiteral, Token
 
 type Expression = (
     Identifier

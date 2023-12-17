@@ -4,8 +4,8 @@ from abc import ABC, abstractmethod
 import copy
 from enum import Enum
 
-from opyl.support.stream import Stream
-from opyl.support.union import Maybe
+from support.stream import Stream
+from support.union import Maybe
 
 
 class ParseResult:
@@ -423,7 +423,6 @@ class Just[In, Err](Parser[In, In, Err]):
         match input.peek():
             case Maybe.Just(item):
                 if item == self.pattern:
-                    print(item, self.pattern)
                     return PR.Match(self.pattern, input.advance())
                 return PR.NoMatch
             case Maybe.Nothing:
