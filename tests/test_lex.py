@@ -1,4 +1,3 @@
-import typing as t
 from opyl.compile.lex import (
     IntegerLiteral,
     Identifier,
@@ -8,11 +7,40 @@ from opyl.compile.lex import (
     identifier,
     string,
     character,
+    basic,
 )
-from opyl.compile.token import Token
+from opyl.compile.token import Basic
+from opyl.compile.error import LexError
+from .utils import parse_test, parse_test_err
 
-from opyl.support.combinator import ParseResult, Parser
-from opyl.support.stream import Stream
+
+class TestBasic:
+    def test_single_plus(self):
+        parse_test(basic, "+", Basic.Plus)
+
+    def test_asterisk(self):
+        parse_test(basic, "*", Basic.Asterisk)
+
+    def test_newline(self):
+        parse_test(basic, "\n", Basic.NewLine)
+
+    def test_hyphen(self):
+        parse_test(basic, "-", Basic.Hyphen)
+
+    def test_right_arrow(self):
+        parse_test(basic, "->", Basic.RightArrow)
+
+    def test_pipe(self):
+        parse_test(basic, "|", Basic.Pipe)
+
+    def test_pipe2(self):
+        parse_test(basic, "||", Basic.Pipe2)
+
+    def test_angle2(self):
+        parse_test(basic, ">>", Basic.RightAngle2)
+
+    def test_angle_equal(self):
+        parse_test(basic, ">=", Basic.RightAngleEqual)
 
 
 class TestIntegerLiteral:
@@ -59,10 +87,10 @@ class TestStringLiteral:
         parse_test(string, '""', StringLiteral(""))
 
     def test_unterminated_string(self):
-        parse_test(string, '"foo', None)
+        parse_test_err(string, '"foo', LexError.UnterminatedStringLiteral)
 
     def test_newline_string(self):
-        parse_test(string, '"foo\n"', None)
+        parse_test_err(string, '"foo\n"', LexError.UnterminatedStringLiteral)
 
 
 class TestCharacterLiteral:
@@ -70,35 +98,7 @@ class TestCharacterLiteral:
         parse_test(character, "'a'", CharacterLiteral("a"))
 
     def test_long_char(self):
-        parse_test(character, "'aa'", None)
+        parse_test_err(character, "'aa'", LexError.UnterminatedCharacterLiteral)
 
     def test_unterminated_char(self):
-        parse_test(character, "'a", None)
-
-
-def panic(message: str) -> t.NoReturn:
-    assert False, message
-
-
-def parse_test(
-    parser: Parser[t.Any, t.Any, t.Any], source: str, expected: Token | None
-):
-    stream = Stream[Token].from_source(source)
-
-    match parser.parse(stream):
-        case ParseResult.Match(item):
-            assert (
-                expected is not None
-            ), f"Parser produced a match when it wasn't expected to: {item}"
-            assert item == expected
-        case ParseResult.NoMatch:
-            assert (
-                expected is None
-            ), "Parser did not produce a match when it was expected to."
-        case ParseResult.Error(err):
-            panic(f"Parser produced an error when it wasn't expected to: {err}")
-
-
-# TODO! For verifying errors rather than just Match and NoMatch
-def parse_test_err():
-    ...
+        parse_test_err(character, "'a", LexError.UnterminatedCharacterLiteral)

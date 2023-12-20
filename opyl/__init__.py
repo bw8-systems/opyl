@@ -1,6 +1,6 @@
-from compile import ast
-from compile import error
-from compile import lex
-from compile import token
+__version__ = "0.1.0"
 
-_ = ast, error, lex, token
+from opyl import compile
+from opyl import support
+
+_ = compile, support

@@ -1,14 +1,14 @@
 import typing as t
 
-from compile import token
-from compile import ast
-from compile.token import Token, Keyword, Basic
-from compile.error import ParseError
-from compile.pratt import expression
-from support.stream import Stream
-from support.combinator import Parser, ParseResult
-from support.union import Maybe
-from support.atoms import just, ident
+from opyl.compile import token
+from opyl.compile import ast
+from opyl.compile.token import Token, Keyword, Basic
+from opyl.compile.error import ParseError
+from opyl.compile.pratt import expr
+from opyl.support.stream import Stream
+from opyl.support.combinator import Parser, ParseResult
+from opyl.support.union import Maybe
+from opyl.support.atoms import just, ident
 
 newlines = just(Basic.NewLine).repeated()
 
@@ -22,22 +22,21 @@ def block[T](item: Parser[Token, T, ParseError]) -> Parser[Token, list[T], Parse
 
 
 type = ident
-expr = expression(0)
 
-field = (
-    ident.then(
-        just(Basic.Colon)
-        .require(ParseError.ToBeImproved)
-        .ignore_then(type.require(ParseError.ToBeImproved))
-    )
+field = ident.then(
+    just(Basic.Colon)
     .require(ParseError.ToBeImproved)
-    .map(lambda items: ast.Field(name=items[0], type=items[1]))
-)
+    .ignore_then(type.require(ParseError.ToBeImproved))
+).map(lambda items: ast.Field(name=items[0], type=items[1]))
 
 const_decl = (
     just(Keyword.Const)
     .ignore_then(field)
-    .then(just(Basic.Equal).ignore_then(expr).require(ParseError.ToBeImproved))
+    .then(
+        just(Basic.Equal)
+        .ignore_then(expr.require(ParseError.ToBeImproved))
+        .require(ParseError.ToBeImproved)
+    )
     .map(
         lambda items: ast.ConstDeclaration(
             name=items[0].name,
@@ -317,19 +316,3 @@ decl = (
 )
 
 decls = newlines.ignore_then(decl.separated_by(newlines.at_least(1)))
-
-
-# def parse(source: str) -> ...:
-#     tokens = lex.tokenize(source)
-
-#     stream = Stream[lexemes.Token](
-#         list(
-#             filter(
-#                 lambda token: not (
-#                     isinstance(token, lexemes.Whitespace)
-#                     or isinstance(token, lexemes.Comment)
-#                 ),
-#                 tokens,
-#             )
-#         )
-#     )

@@ -28,19 +28,21 @@ class Keyword(Enum):
     Anon = "anon"
 
 
+# TODO: Just use enum.auto() here. Lexer does this mapping.
+# Or maybe update lexer to use mapping. That way we preserve the printing utility.
 class Basic(Enum):
     Plus = "+"
-    RightArrow = "->"
     Hyphen = "-"
+    RightArrow = "->"
     Asterisk = "*"
     ForwardSlash = "/"
     Caret = "^"
     Percent = "%"
     At = "@"
-    Ampersand = "&"
     Ampersand2 = "&&"
-    Bang = "!"
+    Ampersand = "&"
     BangEqual = "!="
+    Bang = "!"
     Tilde = "~"
     Colon2 = "::"
     Colon = ":"
@@ -50,20 +52,20 @@ class Basic(Enum):
     RightBrace = "}"
     LeftParenthesis = "("
     RightParenthesis = ")"
-    LeftAngle = "<"
     LeftAngle2 = "<<"
     LeftAngleEqual = "<="
-    RightAngle = ">"
+    LeftAngle = "<"
     RightAngle2 = ">>"
     RightAngleEqual = ">="
+    RightAngle = ">"
     LeftBracket = "["
     RightBracket = "]"
     Comma = ","
     Period = "."
-    Pipe = "|"
     Pipe2 = "||"
+    Pipe = "|"
     NewLine = "\n"
-    Eof = ""
+    Eof = ""  # TODO
 
 
 class TokenKind(Enum):
@@ -80,9 +82,14 @@ class TokenKind(Enum):
 Whitespace: t.Final[t.Literal[TokenKind.Whitespace]] = TokenKind.Whitespace
 
 
-@dataclass(unsafe_hash=True, frozen=True)
+@dataclass(eq=False)
 class Identifier:
     identifier: str
+
+    def __eq__(self, other: t.Any) -> bool:
+        if not isinstance(other, self.__class__):
+            return NotImplemented
+        return self.identifier == other.identifier
 
 
 @dataclass
@@ -106,12 +113,5 @@ class CharacterLiteral:
 
 
 type Token = (
-    Basic
-    | Identifier
-    | IntegerLiteral
-    | Keyword
-    | StringLiteral
-    | t.Literal[TokenKind.Whitespace]
-    | Comment
-    | CharacterLiteral
+    Basic | Identifier | IntegerLiteral | Keyword | StringLiteral | CharacterLiteral
 )

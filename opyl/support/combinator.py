@@ -4,20 +4,28 @@ from abc import ABC, abstractmethod
 import copy
 from enum import Enum
 
-from support.stream import Stream
-from support.union import Maybe
+from opyl.support.stream import Stream
+from opyl.support.union import Maybe
 
 
 class ParseResult:
+    type Type[In, T, E] = Match[T, In] | t.Literal[Kind.NoMatch] | Error[E]
+
     class Kind(Enum):
         Match = 0
         NoMatch = 1
         Error = 2
 
+        def unwrap(self) -> t.NoReturn:
+            assert False, f"Unwrapping failed: ParseResult is not ParseResult.Match"
+
     @dataclass
     class Match[T, In]:
         item: T
         remaining: Stream[In]
+
+        def unwrap(self) -> tuple[T, Stream[In]]:
+            return self.item, self.remaining
 
     NoMatch: t.Final[t.Literal[Kind.NoMatch]] = Kind.NoMatch
 
@@ -25,7 +33,8 @@ class ParseResult:
     class Error[Kind]:
         value: Kind
 
-    type Type[In, T, E] = Match[T, In] | t.Literal[Kind.NoMatch] | Error[E]
+        def unwrap(self) -> t.NoReturn:
+            assert False, f"Unwrapping failed: ParseResult is not ParseResult.Match"
 
 
 PR = ParseResult
@@ -119,6 +128,10 @@ class Parser[In, Out, Err](ABC):
     def repeated(self) -> "Repeated[In, Out, Err]":
         return Repeated(self)
 
+    @t.final
+    def to[Into](self, item: Into) -> "To[In, Out, Into, Err]":
+        return To(self, item)
+
 
 @dataclass
 class Require[In, Out, Err](Parser[In, Out, Err]):
@@ -163,6 +176,22 @@ class Alternative[In, FirstOut, SecondOut, Err](Parser[In, FirstOut | SecondOut,
 
 
 @dataclass
+class To[In, Out, Into, Err](Parser[In, Into, Err]):
+    parser: Parser[In, Out, Err]
+    convert_to: Into
+
+    @t.override
+    def parse(self, input: Stream[In]) -> ParseResult.Type[In, Into, Err]:
+        match self.parser.parse(input):
+            case PR.Match(_, pos):
+                return PR.Match(self.convert_to, pos)
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error(err):
+                return PR.Error(err)
+
+
+@dataclass
 class Then[In, FirstOut, SecondOut, Err](Parser[In, tuple[FirstOut, SecondOut], Err]):
     first: Parser[In, FirstOut, Err]
     second: Parser[In, SecondOut, Err]
@@ -195,7 +224,7 @@ class ThenWithContext[In, Context, SecondOut, Err](
     first: Parser[In, Context, Err]
     second: t.Callable[
         [tuple[Context, Stream[In]]], ParseResult.Type[In, SecondOut, Err]
-    ]
+    ]  # TODO: Use lambda with two parameters
 
     @t.override
     def parse(
@@ -475,8 +504,45 @@ class Just[In, Err](Parser[In, In, Err]):
                 return PR.NoMatch
 
 
+@dataclass
+class StartsWith[In](Parser[In, t.Sequence[In], t.Any]):
+    pattern: t.Sequence[In]
+
+    @t.override
+    def parse(self, input: Stream[In]) -> ParseResult.Type[In, t.Sequence[In], t.Any]:
+        if input.startswith(self.pattern):
+            return PR.Match(self.pattern, input.advance(len(self.pattern)))
+        return PR.NoMatch
+
+
+@dataclass
+class Choice[In, Out, Err](Parser[In, Out, Err]):
+    choices: t.Iterable[Parser[In, Out, Err]]
+
+    def parse(self, input: Stream[In]) -> ParseResult.Type[In, Out, Err]:
+        for choice in self.choices:
+            match choice.parse(input):
+                case PR.Match(item, pos):
+                    return PR.Match(item, pos)
+                case PR.NoMatch:
+                    continue
+                case PR.Error(err):
+                    return PR.Error(err)
+        return PR.NoMatch
+
+
+def startswith[In](pattern: t.Sequence[In]) -> StartsWith[In]:
+    return StartsWith(pattern)
+
+
 def filter[In](func: t.Callable[[In], bool]) -> Filter[In, t.Any]:
     return Filter(func)
+
+
+def choice[
+    In, Out, Err
+](choices: t.Iterable[Parser[In, Out, Err]]) -> Choice[In, Out, Err]:
+    return Choice(choices)
 
 
 def one_of[In](choices: t.Sequence[In]) -> OneOf[In, t.Any]:

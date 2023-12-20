@@ -4,13 +4,15 @@ version = "0.1.0"
 description = "Opal bootstrap transpiler in Python"
 authors = ["bwburnsides <19192452+bwburnsides@users.noreply.github.com>"]
 readme = "README.md"
-packages = [ { include = "**/*.py", from = "."  }]
+packages = [{ include = "**/*.py", from = "." }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
+
+[tool.poetry.dev-dependencies]
 pytest = "^7.4.2"
-pyright = "^1.1.327"
 pytest-cov = "^4.1.0"
+pyright = "^1.1.327"
 black = "^23.11.0"
 
 [build-system]
@@ -26,8 +28,15 @@ reportMissingImports = true
 reportMissingTypeStubs = false
 
 executionEnvironments = [
-  { root = "src/web", pythonVersion = "3.5", pythonPlatform = "Windows", extraPaths = [ "src/service_libs" ] },
-  { root = "src/sdk", pythonVersion = "3.0", extraPaths = [ "src/backend" ] },
-  { root = "src/tests", extraPaths = ["src/tests/e2e", "src/sdk" ]},
-  { root = "src" }
+  { root = "src/web", pythonVersion = "3.5", pythonPlatform = "Windows", extraPaths = [
+    "src/service_libs",
+  ] },
+  { root = "src/sdk", pythonVersion = "3.0", extraPaths = [
+    "src/backend",
+  ] },
+  { root = "src/tests", extraPaths = [
+    "src/tests/e2e",
+    "src/sdk",
+  ] },
+  { root = "src" },
 ]

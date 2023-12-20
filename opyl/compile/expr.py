@@ -2,7 +2,7 @@ import typing as t
 from dataclasses import dataclass
 from enum import Enum
 
-from compile.token import Basic, Identifier, IntegerLiteral, Token
+from opyl.compile.token import Basic, Identifier, IntegerLiteral, Token
 
 type InfixExpression = BinaryExpression | CallExpression | SubscriptExpression
 
