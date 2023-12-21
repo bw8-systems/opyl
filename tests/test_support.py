@@ -1,6 +1,20 @@
-from opyl.compile.token import Identifier, IntegerLiteral
+import pytest
+
+from opyl.compile.token import (
+    Identifier,
+    IntegerLiteral,
+    Basic,
+    IntegerLiteralBase,
+    Token,
+)
 from opyl.support.stream import Stream
 from opyl.compile import lex
+from opyl.support.atoms import just, integer
+
+
+@pytest.fixture
+def no_trailing_or_leading_list() -> Stream[Token]:
+    return lex.tokenize("1, 2, 3, 4").unwrap()[0]
 
 
 class TestStream:
@@ -39,3 +53,72 @@ class TestStream:
         tokens, _ = lex.tokenize("foo 4").unwrap()
 
         assert tokens.startswith([Identifier("foo"), IntegerLiteral(4)])
+
+
+class TestCombinator:
+    def test_separated_by_dont_allow_trailing_leading(
+        self, no_trailing_or_leading_list: Stream[Token]
+    ):
+        result = (
+            integer.separated_by(just(Basic.Comma))
+            .parse(no_trailing_or_leading_list)
+            .unwrap()
+        )
+        assert result[0] == [
+            IntegerLiteral(1),
+            IntegerLiteral(2),
+            IntegerLiteral(3),
+            IntegerLiteral(4),
+        ]
+
+    def test_separated_by_allow_trailing(
+        self, no_trailing_or_leading_list: Stream[Token]
+    ):
+        result = (
+            integer.separated_by(just(Basic.Comma))
+            .allow_leading()
+            .allow_trailing()
+            .parse(no_trailing_or_leading_list)
+            .unwrap()
+        )
+        assert result[0] == [
+            IntegerLiteral(1),
+            IntegerLiteral(2),
+            IntegerLiteral(3),
+            IntegerLiteral(4),
+        ]
+
+    def test_separated_by_allow_trailing_with_trailing(self):
+        tokens = lex.tokenize("1, 2, 3, 4,").unwrap()[0]
+        result = (
+            integer.separated_by(just(Basic.Comma))
+            .allow_trailing()
+            .parse(tokens)
+            .unwrap()
+        )
+        assert result[0] == [
+            IntegerLiteral(1),
+            IntegerLiteral(2),
+            IntegerLiteral(3),
+            IntegerLiteral(4),
+        ]
+
+    def test_separated_by_allow_trailing_with_trailing(self):
+        tokens = lex.tokenize("1, 2, 3, 4,").unwrap()[0]
+        result = (
+            integer.separated_by(just(Basic.Comma))
+            .allow_trailing()
+            .parse(tokens)
+            .unwrap()
+        )
+        assert result[0] == [
+            IntegerLiteral(1),
+            IntegerLiteral(2),
+            IntegerLiteral(3),
+            IntegerLiteral(4),
+        ]
+
+    def test_separated_by_empty(self):
+        tokens = lex.tokenize("").unwrap()[0]
+        result = integer.separated_by(just(Basic.Comma)).parse(tokens).unwrap()
+        assert result[0] == []

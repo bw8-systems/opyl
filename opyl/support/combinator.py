@@ -6,6 +6,7 @@ from enum import Enum
 
 from opyl.support.stream import Stream
 from opyl.support.union import Maybe
+from opyl.support import span
 
 
 class ParseResult:
@@ -113,6 +114,10 @@ class Parser[In, Out, Err](ABC):
     @t.final
     def map[U](self, func: t.Callable[[Out], U]) -> "Map[In, Out, U, Err]":
         return Map(self, func)
+
+    @t.final
+    def spanned(self) -> "Spanned[In, Out, Err]":
+        return Spanned(self)
 
     @t.final
     def and_check(self, pred: t.Callable[[Out], bool]) -> "AndCheck[In, Out, Err]":
@@ -299,54 +304,72 @@ class SeparatedBy[In, Out, Sep, Err](Parser[In, list[Out], Err]):
 
     @t.override
     def parse(self, input: Stream[In]) -> ParseResult.Type[In, list[Out], Err]:
-        ...
-        # # TODO: Rewrite this entire thing.
-        # items = list[Out]()
+        # The general pattern is this:
+        #   ````
+        #   self.parser
+        #   .then_ignore(self.separator)
+        #   .repeated().at_least(self._at_least)
+        #   ```
+        #
+        # However it has these problems:
+        #   - Doesn't allow for a leading separator
+        #   - Requires a trailing separator
+        #
+        # Solution:
+        #   1. if self._allow_leading, try to parse a separator.
+        #   2. Invert ordering of item / separator parsing:
+        #       a. Parse single item.
+        #       b. Parse separator followed by item, repeated.
+        #       c. Chain these to form one list.
+        #   3. If self._allow_trailing, try to parse a separator.
 
-        # if self._allow_leading:
-        #     match self.separator(input):
-        #         case PR.Match():
-        #             ...
-        #         case PR.NoMatch:
-        #             ...
-        #         case PR.Error() as errors:
-        #             return errors
+        pos = input
 
-        # match self.parser(input):
-        #     case PR.Match(item):
-        #         items.append(item)
-        #     case PR.NoMatch:
-        #         if len(items) < self._at_least:
-        #             return PR.NoMatch
-        #         return PR.Match(items)
-        #     case PR.Error() as errors:
-        #         if len(items) < self._at_least:
-        #             return errors
-        #         return PR.Match(items)
+        if self._allow_leading:
+            match self.separator.parse(pos):
+                case PR.Match(_, pos):
+                    ...
+                case PR.NoMatch:
+                    ...
+                case PR.Error(err):
+                    return PR.Error(err)
 
-        # while True:
-        #     match self.separator(input):
-        #         case PR.Match():
-        #             ...
-        #         case PR.NoMatch:
-        #             break
-        #         case PR.Error() as errors:
-        #             return errors
+        match self.parser.parse(pos):
+            case PR.Match(first_item, pos):
+                ...
+            case PR.NoMatch:
+                if self._at_least > 0:
+                    return PR.NoMatch
+                return PR.Match([], input)
+            case PR.Error(err):
+                return PR.Error(err)
 
-        #     match self.parser(input):
-        #         case PR.Match(item):
-        #             items.append(item)
-        #         case PR.NoMatch:
-        #             break
-        #         case PR.Error() as errors:
-        #             if self._allow_trailing:
-        #                 break
+        rest = (
+            self.separator.ignore_then(self.parser)
+            .repeated()
+            .at_least(self._at_least - 1)
+        )
 
-        #             return errors
+        match rest.parse(pos):
+            case PR.Match(items, pos):
+                ...
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error(err):
+                return PR.Error(err)
 
-        # if len(items) < self._at_least:
-        #     return PR.NoMatch
-        # return PR.Match(items)
+        items.insert(0, first_item)
+
+        if self._allow_trailing:
+            match self.separator.parse(pos):
+                case PR.Match(_, pos):
+                    ...
+                case PR.NoMatch:
+                    ...
+                case PR.Error(err):
+                    return PR.Error(err)
+
+        return PR.Match(items, pos)
 
     def allow_leading(self) -> t.Self:
         other = copy.copy(self)
@@ -404,6 +427,23 @@ class OrElse[In, Out, Err](Parser[In, Out, Err]):
                 return PR.Match(self.default, input)
             case PR.Error() as errors:
                 return errors
+
+
+@dataclass
+class Spanned[In, Out, Err](Parser[In, span.Spanned[Out], Err]):
+    parser: Parser[In, Out, Err]
+
+    @t.override
+    def parse(self, input: Stream[In]) -> ParseResult.Type[In, span.Spanned[Out], Err]:
+        match self.parser.parse(input):
+            case PR.Match(item, pos):
+                return PR.Match(
+                    span.Spanned(item, span.Span(input.position, pos.position)), pos
+                )
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error(err):
+                return PR.Error(err)
 
 
 @dataclass

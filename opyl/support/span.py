@@ -8,6 +8,6 @@ class Span:
 
 
 @dataclass
-class Spanned[ItemType]:
-    item: ItemType
+class Spanned[Item]:
+    item: Item
     span: Span

@@ -28,9 +28,9 @@ python opyl source-fname
         - [x] Basic
         - [ ] Escape sequences
     - [ ] Integer Literals
-        - [ ] Binary
+        - [x] Binary
         - [x] Decimal
-        - [ ] Hex
+        - [x] Hex
         - [ ] Suffixes
 - [ ] Parsing of token stream
     - [x] Basic types (primitive and builtin)

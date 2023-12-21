@@ -1,5 +1,6 @@
 from opyl.compile.error import LexError
 from opyl.compile.token import (
+    IntegerLiteralBase,
     Token,
     IntegerLiteral,
     Keyword,
@@ -17,6 +18,7 @@ from opyl.support.combinator import (
     PR,
     OneOf,
     choice,
+    startswith,
 )
 from opyl.support.stream import Stream
 
@@ -25,15 +27,39 @@ just = Just[str, LexError]
 filt = Filter[str, LexError]
 one_of = OneOf[str, LexError]
 
-integer = (
-    (
-        filt(lambda char: str.isdigit(char) and char != "0")
-        .chain(filt(str.isdigit).repeated())
-        .map(lambda chars: int("".join(chars)))
-    )
-    | Just("0").map(int)
-).map(IntegerLiteral)
+bin = one_of("01")
+dec = one_of("0123456789")
+hex = one_of("0123456789abcdefABCDEF")
 
+bin_integer = (
+    startswith("0b")
+    .ignore_then(bin.repeated().at_least(1).require(LexError.MalformedIntegerLiteral))
+    .map(lambda chars: "".join(chars))
+    .map(lambda string: int(string, base=2))
+).map(lambda integer: IntegerLiteral(integer, IntegerLiteralBase.Binary))
+
+dec_integer = (
+    dec.and_check(lambda char: char != "0")
+    .chain(dec.repeated())
+    .map(lambda chars: "".join(chars))
+    .map(lambda string: int(string, base=10))
+).map(lambda integer: IntegerLiteral(integer, IntegerLiteralBase.Decimal))
+
+hex_integer = (
+    startswith("0x")
+    .ignore_then(hex.repeated().at_least(1).require(LexError.MalformedIntegerLiteral))
+    .map(lambda chars: "".join(chars))
+    .map(lambda string: int(string, base=16))
+).map(lambda integer: IntegerLiteral(integer, IntegerLiteralBase.Hexadecimal))
+
+integer = (
+    bin_integer
+    | dec_integer
+    | hex_integer
+    | Just("0")
+    .map(lambda char: int(char, base=10))
+    .map(lambda zero: IntegerLiteral(zero))
+)
 
 identifier = (
     filt(lambda char: char.isalpha() or char == "_")
@@ -112,8 +138,8 @@ tokenizer = (whitespace | comment).repeated().or_not().ignore_then(token).repeat
 
 def tokenize(source: str) -> ParseResult.Type[str, Stream[Token], LexError]:
     match tokenizer.parse(Stream(list(source))):
-        case PR.Match(toks, _rem):
-            return PR.Match(Stream(toks), _rem)
+        case PR.Match(toks, rem):
+            return PR.Match(Stream(toks), rem)
         case PR.NoMatch:
             return PR.NoMatch
         case PR.Error(err):

@@ -86,9 +86,12 @@ func_sig = (
     just(Keyword.Def)
     .ignore_then(ident.require(ParseError.ToBeImproved))
     .then(
-        newlines.ignore_then(param_spec)
-        .separated_by(just(Basic.Comma).then(just(Basic.NewLine).repeated()))
-        .allow_trailing()
+        param_spec.then_ignore(just(Basic.Comma))
+        .then_ignore(newlines)
+        .repeated()
+        # newlines.ignore_then(param_spec)
+        # .separated_by(just(Basic.Comma).then(just(Basic.NewLine).repeated()))
+        # .allow_trailing()
         .delimited_by(
             start=just(Basic.LeftParenthesis),
             end=newlines.ignore_then(just(Basic.RightParenthesis)),
@@ -139,8 +142,8 @@ return_stmt = (
 func_decl = (
     func_sig.then_ignore(just(Basic.NewLine).or_not())
     .then(
-        newlines.ignore_then(stmt)
-        .separated_by(just(Basic.NewLine).repeated())
+        stmt.separated_by(newlines.at_least(1))
+        .allow_leading()
         .allow_trailing()
         .delimited_by(start=just(Basic.LeftBrace), end=just(Basic.RightBrace))
     )
@@ -158,10 +161,8 @@ struct_decl = (
     .ignore_then(ident.require(ParseError.ToBeImproved))
     .then_ignore(just(Basic.NewLine).or_not())
     .then(
-        newlines.ignore_then(field)
-        .separated_by(just(Basic.NewLine).repeated())
-        .at_least(1)
-        .allow_trailing()
+        (field.then_ignore(newlines.at_least(1)))
+        .repeated()
         .delimited_by(
             start=just(Basic.LeftBrace),
             end=newlines.ignore_then(just(Basic.RightBrace)),

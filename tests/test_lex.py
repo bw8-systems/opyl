@@ -9,7 +9,7 @@ from opyl.compile.lex import (
     character,
     basic,
 )
-from opyl.compile.token import Basic
+from opyl.compile.token import Basic, IntegerLiteralBase
 from opyl.compile.error import LexError
 from .utils import parse_test, parse_test_err
 
@@ -60,6 +60,16 @@ class TestIntegerLiteral:
         parse_test(
             integer, "05", IntegerLiteral(0)
         )  # TODO: Should be illegal. We'll fix it in post.
+
+    def test_binary_literal(self):
+        parse_test(integer, "0b01", IntegerLiteral(0b01, IntegerLiteralBase.Binary))
+
+    def test_hex_literal(self):
+        parse_test(
+            integer,
+            "0xdeadBEEF",
+            IntegerLiteral(0xDEADBEEF, IntegerLiteralBase.Hexadecimal),
+        )
 
 
 class TestIdentifier:

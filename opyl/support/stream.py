@@ -31,7 +31,9 @@ class Stream[ItemType]:
         )
 
     def startswith(self, pattern: t.Sequence[ItemType]) -> bool:
-        if (len(self.items) == 0) or (len(pattern) == 0):
+        if len(pattern) == 0:
+            return False
+        if len(self.items) < len(pattern):
             return False
 
         for pat, item in zip(pattern, self.items):
