@@ -1,3 +1,4 @@
+import typing as t
 from dataclasses import dataclass
 
 
@@ -11,3 +12,7 @@ class Span:
 class Spanned[Item]:
     item: Item
     span: Span
+
+    @classmethod
+    def from_pair(cls, pair: tuple[Item, Span]) -> t.Self:
+        return cls(pair[0], pair[1])

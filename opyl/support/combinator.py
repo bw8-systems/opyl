@@ -7,6 +7,7 @@ from enum import Enum
 from opyl.support.stream import Stream
 from opyl.support.union import Maybe
 from opyl.support import span
+from opyl.support.span import Span
 
 
 class ParseResult:
@@ -18,7 +19,12 @@ class ParseResult:
         Error = 2
 
         def unwrap(self) -> t.NoReturn:
-            assert False, f"Unwrapping failed: ParseResult is not ParseResult.Match"
+            assert self is self.NoMatch
+            assert False, "Unwrapping failed: ParseResult is not ParseResult.Match"
+
+        def unwrap_err(self) -> t.NoReturn:
+            assert self is self.NoMatch
+            assert False, "Unwrapping failed: ParseResult is not ParseResult.Error"
 
     @dataclass
     class Match[In, Out]:
@@ -28,14 +34,21 @@ class ParseResult:
         def unwrap(self) -> tuple[Out, Stream[In]]:
             return self.item, self.remaining
 
+        def unwrap_err(self) -> t.NoReturn:
+            assert False, "Unwrapping failed, ParseResult is not ParseResult.Error"
+
     NoMatch: t.Final[t.Literal[Kind.NoMatch]] = Kind.NoMatch
 
     @dataclass
     class Error[Kind]:
         value: Kind
+        span: Span
 
         def unwrap(self) -> t.NoReturn:
-            assert False, f"Unwrapping failed: ParseResult is not ParseResult.Match"
+            assert False, "Unwrapping failed: ParseResult is not ParseResult.Match"
+
+        def unwrap_err(self) -> tuple[Kind, Span]:
+            return self.value, self.span
 
 
 PR = ParseResult
@@ -118,6 +131,14 @@ class Parser[In, Out, Err](ABC):
         return Spanned(self)
 
     @t.final
+    def map_with_span[
+        Mapped
+    ](
+        self, mapper: t.Callable[[Out, Span], Mapped]
+    ) -> "MapWithSpan[In, Out, Mapped, Err]":
+        return MapWithSpan(self, mapper)
+
+    @t.final
     def and_check(self, pred: t.Callable[[Out], bool]) -> "AndCheck[In, Out, Err]":
         return AndCheck(self, pred)
 
@@ -147,7 +168,11 @@ class Require[In, Out, Err](Parser[In, Out, Err]):
             case PR.Match(item, pos):
                 return PR.Match(item, pos)
             case PR.NoMatch:
-                return PR.Error(self.error)
+                match input.peek():
+                    case Maybe.Just(spanned):
+                        return PR.Error(self.error, spanned.span)
+                    case Maybe.Nothing:
+                        return PR.Error(self.error, input.end())
             case PR.Error() as errs:
                 return errs
 
@@ -190,8 +215,8 @@ class To[In, Out, Into, Err](Parser[In, Into, Err]):
                 return PR.Match(self.convert_to, pos)
             case PR.NoMatch:
                 return PR.NoMatch
-            case PR.Error(err):
-                return PR.Error(err)
+            case PR.Error() as error:
+                return error
 
 
 @dataclass
@@ -218,8 +243,8 @@ class Then[In, FirstOut, SecondOut, Err](Parser[In, tuple[FirstOut, SecondOut], 
                 return PR.Match((first_result.item, second_item), pos)
             case PR.NoMatch:
                 return PR.NoMatch
-            case PR.Error(err):
-                return PR.Error(err)
+            case PR.Error() as error:
+                return error
 
         raise RuntimeError("Something went wrong. This should not be reachable.")
 
@@ -327,8 +352,8 @@ class SeparatedBy[In, Out, Sep, Err](Parser[In, list[Out], Err]):
                     ...
                 case PR.NoMatch:
                     ...
-                case PR.Error(err):
-                    return PR.Error(err)
+                case PR.Error() as error:
+                    return error
 
         match self.parser.parse(pos):
             case PR.Match(first_item, pos):
@@ -337,8 +362,8 @@ class SeparatedBy[In, Out, Sep, Err](Parser[In, list[Out], Err]):
                 if self._at_least > 0:
                     return PR.NoMatch
                 return PR.Match([], input)
-            case PR.Error(err):
-                return PR.Error(err)
+            case PR.Error() as error:
+                return error
 
         rest = (
             self.separator.ignore_then(self.parser)
@@ -351,8 +376,8 @@ class SeparatedBy[In, Out, Sep, Err](Parser[In, list[Out], Err]):
                 ...
             case PR.NoMatch:
                 return PR.NoMatch
-            case PR.Error(err):
-                return PR.Error(err)
+            case PR.Error() as error:
+                return error
 
         items.insert(0, first_item)
 
@@ -362,8 +387,8 @@ class SeparatedBy[In, Out, Sep, Err](Parser[In, list[Out], Err]):
                     ...
                 case PR.NoMatch:
                     ...
-                case PR.Error(err):
-                    return PR.Error(err)
+                case PR.Error() as error:
+                    return error
 
         return PR.Match(items, pos)
 
@@ -425,6 +450,7 @@ class OrElse[In, Out, Err](Parser[In, Out, Err]):
                 return errors
 
 
+# TODO: Are Spanned and MapWithSpan both needed?
 @dataclass
 class Spanned[In, Out, Err](Parser[In, span.Spanned[Out], Err]):
     parser: Parser[In, Out, Err]
@@ -434,12 +460,12 @@ class Spanned[In, Out, Err](Parser[In, span.Spanned[Out], Err]):
         match self.parser.parse(input):
             case PR.Match(item, pos):
                 return PR.Match(
-                    span.Spanned(item, span.Span(input.position, pos.position)), pos
+                    span.Spanned(item, Span(input.position, pos.position)), pos
                 )
             case PR.NoMatch:
                 return PR.NoMatch
-            case PR.Error(err):
-                return PR.Error(err)
+            case PR.Error() as errors:
+                return errors
 
 
 @dataclass
@@ -454,8 +480,25 @@ class Map[In, Out, Mapped, Err](Parser[In, Mapped, Err]):
                 return PR.Match(self.mapper(item), pos)
             case PR.NoMatch:
                 return PR.NoMatch
-            case PR.Error(err):
-                return PR.Error(err)
+            case PR.Error() as errors:
+                return errors
+
+
+@dataclass
+class MapWithSpan[In, Out, Mapped, Err](Parser[In, Mapped, Err]):
+    parser: Parser[In, Out, Err]
+    mapper: t.Callable[[Out, Span], Mapped]
+
+    @t.override
+    def parse(self, input: Stream[In]) -> ParseResult.Type[In, Mapped, Err]:
+        match self.parser.parse(input):
+            case PR.Match(item, pos):
+                item_span = Span(start=input.position, end=pos.position)
+                return PR.Match(self.mapper(item, item_span), pos)
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error() as errors:
+                return errors
 
 
 @dataclass
@@ -465,9 +508,9 @@ class Filter[In, Err](Parser[In, In, Err]):
     @t.override
     def parse(self, input: Stream[In]) -> ParseResult.Type[In, In, Err]:
         match input.peek():
-            case Maybe.Just(item):
-                if self.func(item):
-                    return PR.Match(item, input.advance())
+            case Maybe.Just(spanned):
+                if self.func(spanned.item):
+                    return PR.Match(spanned.item, input.advance())
                 return PR.NoMatch
             case Maybe.Nothing:
                 return PR.NoMatch
@@ -487,8 +530,8 @@ class AndCheck[In, Out, Err](Parser[In, Out, Err]):
                 return PR.NoMatch
             case PR.NoMatch:
                 return PR.NoMatch
-            case PR.Error(err):
-                return PR.Error(err)
+            case PR.Error() as errors:
+                return errors
 
 
 @dataclass
@@ -527,9 +570,9 @@ class OneOf[In, Err](Parser[In, In, Err]):
     @t.override
     def parse(self, input: Stream[In]) -> ParseResult.Type[In, In, Err]:
         match input.peek():
-            case Maybe.Just(item):
-                if item in self.choices:
-                    return PR.Match(item, input.advance())
+            case Maybe.Just(spanned):
+                if spanned.item in self.choices:
+                    return PR.Match(spanned.item, input.advance())
                 return PR.NoMatch
             case Maybe.Nothing:
                 return PR.NoMatch
@@ -542,8 +585,8 @@ class Just[In, Err](Parser[In, In, Err]):
     @t.override
     def parse(self, input: Stream[In]) -> ParseResult.Type[In, In, Err]:
         match input.peek():
-            case Maybe.Just(item):
-                if item == self.pattern:
+            case Maybe.Just(spanned):
+                if spanned.item == self.pattern:
                     return PR.Match(self.pattern, input.advance())
                 return PR.NoMatch
             case Maybe.Nothing:
@@ -572,8 +615,9 @@ class Choice[In, Out, Err](Parser[In, Out, Err]):
                     return PR.Match(item, pos)
                 case PR.NoMatch:
                     continue
-                case PR.Error(err):
-                    return PR.Error(err)
+                case PR.Error() as errors:
+                    return errors
+
         return PR.NoMatch
 
 

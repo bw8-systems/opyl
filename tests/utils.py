@@ -1,4 +1,6 @@
 import typing as t
+from pprint import pprint
+
 from opyl.support.combinator import ParseResult, Parser
 from opyl.support.stream import Stream
 from opyl.compile.token import Token
@@ -17,8 +19,8 @@ def parse_test(
     stream = Stream[str].from_source(source)
 
     result = parser.parse(stream)
-    print("Parser: ", parser)
-    print("Parsing result: ", result)
+    pprint(f"Parser: {parser}")
+    pprint(f"Parsing result: {result}")
 
     match result:
         case ParseResult.Match(item):
@@ -30,8 +32,8 @@ def parse_test(
             assert (
                 expected is None
             ), "Parser did not produce a match when it was expected to."
-        case ParseResult.Error(err):
-            panic(f"Parser produced an error when it wasn't expected to: {err}")
+        case ParseResult.Error() as error:
+            panic(f"Parser produced an error when it wasn't expected to: {error}")
 
 
 def parse_test_err(
@@ -44,5 +46,5 @@ def parse_test_err(
             panic(f"Parser produced a match when it wasn't expected to: {item}")
         case ParseResult.NoMatch:
             panic("Parser did not produce an error when it was expected to.")
-        case ParseResult.Error(err):
-            assert err == expected
+        case ParseResult.Error() as error:
+            assert error.value == expected

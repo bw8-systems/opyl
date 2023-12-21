@@ -22,18 +22,18 @@ def block[T](item: Parser[Token, T, ParseError]) -> Parser[Token, list[T], Parse
 type = ident
 
 field = ident.then(
-    just(Basic.Colon)
-    .require(ParseError.ToBeImproved)
-    .ignore_then(type.require(ParseError.ToBeImproved))
+    just(Basic.Colon).ignore_then(
+        type.require(ParseError(expected="type", following="':'"))
+    )
 ).map(lambda items: ast.Field(name=items[0], type=items[1]))
 
 const_decl = (
     just(Keyword.Const)
     .ignore_then(field)
     .then(
-        just(Basic.Equal)
-        .ignore_then(expr.require(ParseError.ToBeImproved))
-        .require(ParseError.ToBeImproved)
+        just(Basic.Equal).ignore_then(
+            expr.require(ParseError(expected="expression", following="'='"))
+        )
     )
     .map(
         lambda items: ast.ConstDeclaration(
@@ -48,7 +48,16 @@ let_decl = (
     just(Keyword.Let)
     .ignore_then(just(Keyword.Mut).or_not().map(lambda mut: mut is not Maybe.Nothing))
     .then(field)
-    .then(just(Basic.Equal).ignore_then(expr).require(ParseError.ToBeImproved))
+    .require(
+        ParseError(expected="field of form 'name: Type'", following="'let' keyword")
+    )
+    .then(
+        just(Basic.Equal)
+        .ignore_then(expr)
+        .require(
+            ParseError(expected="initializer", following="'let' variable declaration")
+        )
+    )
     .map(
         lambda items: ast.VarDeclaration(
             is_mut=items[0][0],
@@ -63,14 +72,18 @@ param_spec = (
     just(Keyword.Anon)
     .or_not()
     .map(lambda anon: anon is not Maybe.Nothing)
-    .then(ident.require(ParseError.ToBeImproved))
-    .then_ignore(just(Basic.Colon).require(ParseError.ToBeImproved))
+    .then(
+        ident
+    )  # TODO: Error description here: Identifier should not be required if `anon` wasn't present.
+    .then_ignore(
+        just(Basic.Colon).require(ParseError(expected="':'", following="identifier"))
+    )
     .then(
         just(Keyword.Mut)
         .or_not()
         .map(lambda mut: mut is not Maybe.Nothing)
         .then(type)
-        .require(ParseError.ToBeImproved)
+        .require(ParseError(expected="type", following="':'"))
     )
     .map(
         lambda items: ast.ParamSpec(
@@ -84,22 +97,19 @@ param_spec = (
 
 func_sig = (
     just(Keyword.Def)
-    .ignore_then(ident.require(ParseError.ToBeImproved))
+    .ignore_then(
+        ident.require(ParseError(expected="identifier", following="'def' keyword"))
+    )
     .then(
-        param_spec.then_ignore(just(Basic.Comma))
+        newlines.ignore_then(param_spec)
+        .separated_by(just(Basic.Comma))
+        .allow_trailing()
         .then_ignore(newlines)
-        .repeated()
-        # newlines.ignore_then(param_spec)
-        # .separated_by(just(Basic.Comma).then(just(Basic.NewLine).repeated()))
-        # .allow_trailing()
-        .delimited_by(
-            start=just(Basic.LeftParenthesis),
-            end=newlines.ignore_then(just(Basic.RightParenthesis)),
-        )
+        .delimited_by(just(Basic.LeftParenthesis), just(Basic.RightParenthesis))
     )
     .then(
         just(Basic.RightArrow)
-        .ignore_then(ident.require(ParseError.ToBeImproved))
+        .ignore_then(ident.require(ParseError(expected="identifier", following="'->'")))
         .or_not()
     )
     .map(
@@ -142,10 +152,9 @@ return_stmt = (
 func_decl = (
     func_sig.then_ignore(just(Basic.NewLine).or_not())
     .then(
-        stmt.separated_by(newlines.at_least(1))
-        .allow_leading()
-        .allow_trailing()
-        .delimited_by(start=just(Basic.LeftBrace), end=just(Basic.RightBrace))
+        newlines.ignore_then(
+            stmt.separated_by(newlines.at_least(1)).allow_leading().allow_trailing()
+        ).delimited_by(start=just(Basic.LeftBrace), end=just(Basic.RightBrace))
     )
     .map(
         lambda items: ast.FunctionDeclaration(
@@ -158,7 +167,9 @@ func_decl = (
 
 struct_decl = (
     just(Keyword.Struct)
-    .ignore_then(ident.require(ParseError.ToBeImproved))
+    .ignore_then(
+        ident.require(ParseError(expected="identifier", following="'struct' keyword"))
+    )
     .then_ignore(just(Basic.NewLine).or_not())
     .then(
         (field.then_ignore(newlines.at_least(1)))
@@ -179,7 +190,9 @@ struct_decl = (
 
 enum_decl = (
     just(Keyword.Enum)
-    .ignore_then(ident.require(ParseError.ToBeImproved))
+    .ignore_then(
+        ident.require(ParseError(expected="identifier", following="'enum' keyword"))
+    )
     .then_ignore(just(Basic.NewLine).or_not())
     .then(
         newlines.ignore_then(ident)
@@ -195,7 +208,9 @@ enum_decl = (
 
 union_decl = (
     just(Keyword.Union)
-    .ignore_then(ident.require(ParseError.ToBeImproved))
+    .ignore_then(
+        ident.require(ParseError(expected="identifier", following="'union' keyword"))
+    )
     .then_ignore(just(Basic.Equal))
     .then(type.separated_by(just(Basic.Pipe)).at_least(2))
     .then_ignore(just(Basic.NewLine).or_not())
@@ -222,7 +237,9 @@ union_decl = (
 
 trait_decl = (
     just(Keyword.Trait)
-    .ignore_then(ident.require(ParseError.ToBeImproved))
+    .ignore_then(
+        ident.require(ParseError(expected="identifier", following="'trait' keyword"))
+    )
     .then_ignore(just(Basic.NewLine).or_not())
     .then(
         newlines.ignore_then(func_sig)
@@ -239,7 +256,9 @@ trait_decl = (
 
 if_stmt = (
     just(Keyword.If)
-    .ignore_then(expr.require(ParseError.ToBeImproved))
+    .ignore_then(
+        expr.require(ParseError(expected="expression", following="'if' keyword"))
+    )
     .then(block(stmt).map(lambda _stmts: []))
     .then(just(Keyword.Else).or_not().ignore_then(block(stmt).map(lambda _stmts: [])))
     .map(

@@ -1,4 +1,5 @@
 import typing as t
+
 from opyl.compile.error import LexError
 from opyl.compile.token import (
     IntegerLiteralBase,
@@ -28,6 +29,7 @@ from opyl.support.stream import Stream
 just = Just[str, LexError]
 filt = Filter[str, LexError]
 one_of = OneOf[str, LexError]
+
 
 bin = one_of("01")
 dec = one_of("0123456789")
@@ -156,16 +158,14 @@ strip = (whitespace | comment).repeated().or_not()
 # position dependent.
 token = integer | keyword | identifier | basic | string | character
 
-tokenizer = strip.ignore_then(token).repeated()
+tokenizer = strip.ignore_then(token.spanned()).repeated()
 
 
-def tokenize(
-    source: str,
-) -> ParseResult.Type[str, Stream[Token], LexError]:
-    match tokenizer.parse(Stream(list(source))):
+def tokenize(source: str) -> ParseResult.Type[str, Stream[Token], LexError]:
+    match tokenizer.parse(Stream.from_source(source)):
         case PR.Match(toks, rem):
             return PR.Match(Stream(toks), rem)
         case PR.NoMatch:
             return PR.NoMatch
-        case PR.Error(err):
-            return PR.Error(err)
+        case PR.Error() as error:
+            return error

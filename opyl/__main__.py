@@ -1,8 +1,9 @@
 import argparse
-from pprint import pprint
 
 from opyl.compile import lex
 from opyl.compile import parse
+from opyl.compile.error import format_error
+from opyl.support.combinator import PR
 
 
 def main():
@@ -14,8 +15,15 @@ def main():
         source = f.read()
 
     stream = lex.tokenize(source).unwrap()[0]
-    result = parse.parse(stream)
-    pprint(result.unwrap()[0])
+
+    match parse.parse(stream):
+        case PR.Match():
+            ...
+        case PR.NoMatch:
+            ...
+        case PR.Error(err, span):
+            fmt = format_error(err, span, source)
+            print(fmt)
 
 
 if __name__ == "__main__":

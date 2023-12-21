@@ -8,9 +8,16 @@ class Maybe:
         Just = 0
         Nothing = 1
 
+        def unwrap(self) -> t.NoReturn:
+            assert self is self.Nothing
+            assert False, "Unwrapping failed: Maybe is not Maybe.Just"
+
     @dataclass
     class Just[T]:
         item: T
+
+        def unwrap(self) -> T:
+            return self.item
 
     Nothing: t.Final[t.Literal[Kind.Nothing]] = Kind.Nothing
 

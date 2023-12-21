@@ -23,7 +23,7 @@ from opyl.support.union import Maybe
 def check_precedence(input: Stream[Token]) -> int:
     match input.peek():
         case Maybe.Just(tok):
-            match tok:
+            match tok.item:
                 case op if isinstance(op, Basic) and op in BinOp:
                     return BinOp(op).precedence()
                 case paren if paren is Basic.LeftParenthesis:
@@ -49,8 +49,8 @@ class Expression(Parser[Token, ex.Expression, ParseError]):
                 ...
             case PR.NoMatch:
                 return PR.NoMatch
-            case PR.Error(err):
-                return PR.Error(err)
+            case PR.Error() as error:
+                return error
 
         while self.precedence < check_precedence(pos):
             match infix_parser(left).parse(pos):
@@ -58,8 +58,8 @@ class Expression(Parser[Token, ex.Expression, ParseError]):
                     left = expr
                 case PR.NoMatch:
                     return PR.NoMatch
-                case PR.Error(err):
-                    return PR.Error(err)
+                case PR.Error() as error:
+                    return error
 
         return PR.Match(left, pos)
 
