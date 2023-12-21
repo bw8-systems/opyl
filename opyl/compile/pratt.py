@@ -15,7 +15,7 @@ from opyl.compile.expr import (
 )
 from opyl.support.combinator import PR, Parser, ParseResult
 from opyl.support.stream import Stream
-from opyl.support.atoms import just, filt, ident, integer
+from opyl.support.atoms import just, filt, ident, integer, newlines
 from opyl.support.union import Maybe
 
 
@@ -70,7 +70,11 @@ def expression(precedence: int) -> Expression:
 
 expr = expression(0)
 
-grouped_expr = expr.then_ignore(just(Basic.RightParenthesis))
+grouped_expr = (
+    just(Basic.LeftParenthesis)
+    .ignore_then(newlines)
+    .ignore_then(expr.then_ignore(newlines).then_ignore(just(Basic.RightParenthesis)))
+)
 
 
 def bin_op_expr(left: ex.Expression) -> Parser[Token, BinaryExpression, ParseError]:
@@ -92,13 +96,14 @@ def bin_op_expr(left: ex.Expression) -> Parser[Token, BinaryExpression, ParseErr
 
 def call_expr(function: ex.Expression) -> Parser[Token, CallExpression, ParseError]:
     args = (
-        (expr.then_ignore(just(Basic.Comma)))
+        (expr.then_ignore(just(Basic.Comma)).then_ignore(newlines))
         .repeated()
+        .then_ignore(newlines)
         .then_ignore(just(Basic.RightParenthesis))
         .map(lambda args: CallExpression(function, args))
     )
 
-    return just(Basic.LeftParenthesis).ignore_then(args)
+    return just(Basic.LeftParenthesis).ignore_then(newlines).ignore_then(args)
 
 
 def subscript_expr(
@@ -106,7 +111,9 @@ def subscript_expr(
 ) -> Parser[Token, SubscriptExpression, ParseError]:
     return (
         just(Basic.LeftBracket)
+        .ignore_then(newlines)
         .ignore_then(expr)
+        .then_ignore(newlines)
         .then_ignore(just(Basic.RightBracket))
         .map(lambda index: SubscriptExpression(base, index))
     )
@@ -119,12 +126,7 @@ prefix_op_expr = (
     .map(lambda op_right: PrefixExpression(op_right[0], op_right[1]))
 )
 
-prefix_parser = (
-    just(Basic.LeftParenthesis).ignore_then(grouped_expr)
-    | prefix_op_expr
-    | ident
-    | integer
-)
+prefix_parser = grouped_expr | prefix_op_expr | ident | integer
 
 
 def infix_parser(left: ex.Expression) -> Parser[Token, InfixExpression, ParseError]:

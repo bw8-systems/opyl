@@ -8,9 +8,7 @@ from opyl.compile.pratt import expr
 from opyl.support.stream import Stream
 from opyl.support.combinator import Parser, ParseResult
 from opyl.support.union import Maybe
-from opyl.support.atoms import just, ident
-
-newlines = just(Basic.NewLine).repeated()
+from opyl.support.atoms import just, ident, newlines
 
 
 def block[T](item: Parser[Token, T, ParseError]) -> Parser[Token, list[T], ParseError]:
@@ -315,4 +313,12 @@ decl = (
     | trait_decl
 )
 
-decls = newlines.ignore_then(decl.separated_by(newlines.at_least(1)))
+decls = newlines.ignore_then(
+    decl.chain(newlines.at_least(1).ignore_then(decl).repeated())
+)
+
+
+def parse(
+    stream: Stream[Token],
+) -> ParseResult.Type[Token, list[ast.Declaration], ParseError]:
+    return decls.parse(stream)

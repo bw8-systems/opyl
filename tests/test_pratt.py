@@ -85,3 +85,52 @@ def test_call_expr_no_args():
     result = pratt.expr.parse(tokens)
     item = result.unwrap()[0]
     assert item == CallExpression(Identifier("function"), [])
+
+
+def test_grouped_expr_line_breaks():
+    tokens = lex.tokenize(
+        """(
+            5 + 2
+        )
+        """
+    ).unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap()[0]
+    assert item == BinaryExpression(
+        BinOp.Addition, IntegerLiteral(5), IntegerLiteral(2)
+    )
+
+
+def test_grouped_expr_nested_line_breaks():
+    tokens = lex.tokenize(
+        """(
+            5 + (
+                2 + 3
+            )
+        )
+        """
+    ).unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap()[0]
+    assert item == BinaryExpression(
+        BinOp.Addition,
+        IntegerLiteral(5),
+        BinaryExpression(BinOp.Addition, IntegerLiteral(2), IntegerLiteral(3)),
+    )
+
+
+def test_function_call_with_line_breaks():
+    tokens = lex.tokenize(
+        """function(
+            alpha,
+            bravo,
+            charlie,
+        )
+        """
+    ).unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap()[0]
+    assert item == CallExpression(
+        Identifier("function"),
+        [Identifier("alpha"), Identifier("bravo"), Identifier("charlie")],
+    )

@@ -213,8 +213,12 @@ class Then[In, FirstOut, SecondOut, Err](Parser[In, tuple[FirstOut, SecondOut], 
         match self.second.parse(first_result.remaining):
             case PR.Match(second_item, pos):
                 return PR.Match((first_result.item, second_item), pos)
-            case no_match_or_err:
-                return no_match_or_err
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error(err):
+                return PR.Error(err)
+
+        raise RuntimeError("Something went wrong. This should not be reachable.")
 
 
 @dataclass
@@ -412,8 +416,10 @@ class Map[In, Out, Mapped, Err](Parser[In, Mapped, Err]):
         match self.parser.parse(input):
             case PR.Match(item, pos):
                 return PR.Match(self.mapper(item), pos)
-            case no_match_or_err:
-                return no_match_or_err
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error(err):
+                return PR.Error(err)
 
 
 @dataclass
@@ -467,6 +473,8 @@ class Repeated[In, Out, Err](Parser[In, list[Out], Err]):
                     return PR.Match(items, input)
                 case PR.Error() as err:
                     return err
+
+        raise RuntimeError("Something went wrong. This should not have been reachable.")
 
     def at_least(self, minimum: int) -> t.Self:
         other = copy.copy(self)

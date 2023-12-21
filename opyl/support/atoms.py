@@ -1,5 +1,5 @@
 import typing as t
-from opyl.compile.token import Token, Identifier, IntegerLiteral
+from opyl.compile.token import Token, Identifier, IntegerLiteral, Basic
 from opyl.compile.error import ParseError
 from opyl.support.combinator import Filter, Just
 
@@ -12,3 +12,4 @@ ident = filt(lambda tok: isinstance(tok, Identifier)).map(
 integer = filt(lambda tok: isinstance(tok, IntegerLiteral)).map(
     lambda tok: t.cast(IntegerLiteral, tok)
 )
+newlines = just(Basic.NewLine).repeated()
