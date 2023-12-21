@@ -56,7 +56,6 @@ class MethodSignature:
 
 type Declaration = (
     FunctionDeclaration
-    # | MethodDeclaration  # TODO: Move elsewhere. This can't go at module level.
     | ConstDeclaration
     | VarDeclaration
     | EnumDeclaration
@@ -71,7 +70,6 @@ class FunctionDeclaration:
     name: Identifier
     signature: FunctionSignature
     body: list[Statement]
-    # TODO: etc
 
 
 @dataclass
@@ -79,7 +77,6 @@ class MethodDeclaration:
     name: Identifier
     signature: MethodSignature
     body: list[Statement]
-    # TODO: etc
 
 
 @dataclass

@@ -28,44 +28,42 @@ class Keyword(Enum):
     Anon = "anon"
 
 
-# TODO: Just use enum.auto() here. Lexer does this mapping.
-# Or maybe update lexer to use mapping. That way we preserve the printing utility.
 class Basic(Enum):
-    Plus = "+"
-    Hyphen = "-"
-    RightArrow = "->"
-    Asterisk = "*"
-    ForwardSlash = "/"
-    Caret = "^"
-    Percent = "%"
-    At = "@"
-    Ampersand2 = "&&"
-    Ampersand = "&"
-    BangEqual = "!="
-    Bang = "!"
-    Tilde = "~"
-    Colon2 = "::"
-    Colon = ":"
-    Equal2 = "=="
-    Equal = "="
-    LeftBrace = "{"
-    RightBrace = "}"
-    LeftParenthesis = "("
-    RightParenthesis = ")"
-    LeftAngle2 = "<<"
-    LeftAngleEqual = "<="
-    LeftAngle = "<"
-    RightAngle2 = ">>"
-    RightAngleEqual = ">="
-    RightAngle = ">"
-    LeftBracket = "["
-    RightBracket = "]"
-    Comma = ","
-    Period = "."
-    Pipe2 = "||"
-    Pipe = "|"
-    NewLine = "\n"
-    Eof = ""  # TODO
+    Plus = auto()
+    Hyphen = auto()
+    RightArrow = auto()
+    Asterisk = auto()
+    ForwardSlash = auto()
+    Caret = auto()
+    Percent = auto()
+    At = auto()
+    Ampersand2 = auto()
+    Ampersand = auto()
+    BangEqual = auto()
+    Bang = auto()
+    Tilde = auto()
+    Colon2 = auto()
+    Colon = auto()
+    Equal2 = auto()
+    Equal = auto()
+    LeftBrace = auto()
+    RightBrace = auto()
+    LeftParenthesis = auto()
+    RightParenthesis = auto()
+    LeftAngle2 = auto()
+    LeftAngleEqual = auto()
+    LeftAngle = auto()
+    RightAngle2 = auto()
+    RightAngleEqual = auto()
+    RightAngle = auto()
+    LeftBracket = auto()
+    RightBracket = auto()
+    Comma = auto()
+    Period = auto()
+    Pipe2 = auto()
+    Pipe = auto()
+    NewLine = auto()
+    Eof = auto()  # TODO
 
 
 class TokenKind(Enum):

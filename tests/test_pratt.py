@@ -69,10 +69,17 @@ def test_subscript_expr_complex_index():
     )
 
 
-def test_call_expr():
-    # TODO: Although trailing commas are allowed here, they shouldn't be required.
-    # Parser isn't flexible to that right now because SeparatedBy is not available.
+def test_call_expr_with_trailing_comma():
     tokens = lex.tokenize("function(foo, 1,)").unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap()[0]
+    assert item == CallExpression(
+        Identifier("function"), [Identifier("foo"), IntegerLiteral(1)]
+    )
+
+
+def test_call_expr_no_trailing_comma():
+    tokens = lex.tokenize("function(foo, 1)").unwrap()[0]
     result = pratt.expr.parse(tokens)
     item = result.unwrap()[0]
     assert item == CallExpression(

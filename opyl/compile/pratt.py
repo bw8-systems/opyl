@@ -83,9 +83,7 @@ def bin_op_expr(left: ex.Expression) -> Parser[Token, BinaryExpression, ParseErr
         filt(lambda tok: isinstance(tok, Basic) and tok in BinOp)
         .map(lambda op: BinOp(op))
         .map(lambda op: (op, op.adjusted_precedence()))
-        .then_with_ctx(
-            lambda op_prec_inp: expression(op_prec_inp[0][1]).parse(op_prec_inp[1])
-        )
+        .then_with_ctx(lambda op_prec, input: expression(op_prec[1]).parse(input))
         .map(
             lambda op_prec_right: BinaryExpression(
                 op_prec_right[0][0], left, op_prec_right[1]
@@ -96,12 +94,11 @@ def bin_op_expr(left: ex.Expression) -> Parser[Token, BinaryExpression, ParseErr
 
 def call_expr(function: ex.Expression) -> Parser[Token, CallExpression, ParseError]:
     args = (
-        (expr.then_ignore(just(Basic.Comma)).then_ignore(newlines))
-        .repeated()
+        expr.separated_by(just(Basic.Comma).then_ignore(newlines))
+        .allow_trailing()
         .then_ignore(newlines)
         .then_ignore(just(Basic.RightParenthesis))
-        .map(lambda args: CallExpression(function, args))
-    )
+    ).map(lambda args: CallExpression(function, args))
 
     return just(Basic.LeftParenthesis).ignore_then(newlines).ignore_then(args)
 
@@ -122,7 +119,7 @@ def subscript_expr(
 prefix_op_expr = (
     filt(lambda op: isinstance(op, Basic) and op in PrefixOperator)
     .map(lambda op: PrefixOperator(op))
-    .then_with_ctx(lambda op_inp: expression(op_inp[0].precedence()).parse(op_inp[1]))
+    .then_with_ctx(lambda op, input: expression(op.precedence()).parse(input))
     .map(lambda op_right: PrefixExpression(op_right[0], op_right[1]))
 )
 

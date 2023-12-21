@@ -24,7 +24,7 @@ python opyl source-fname
     - [ ] Character Literals *eg* `'c'`
         - [x] Basic
         - [ ] Escape sequences *eg* `'\n'`
-    - [ ] String Literals *eq* `'Hello, World!'`
+    - [ ] String Literals *eg* `'Hello, World!'`
         - [x] Basic
         - [ ] Escape sequences
     - [ ] Integer Literals
@@ -32,6 +32,7 @@ python opyl source-fname
         - [x] Decimal
         - [x] Hex
         - [ ] Suffixes
+        - [x] Underscores in literals
 - [ ] Parsing of token stream
     - [x] Basic types (primitive and builtin)
     - [ ] Aggregate types (arrays)

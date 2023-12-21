@@ -10,7 +10,7 @@ from opyl.support import span
 
 
 class ParseResult:
-    type Type[In, T, E] = Match[T, In] | t.Literal[Kind.NoMatch] | Error[E]
+    type Type[In, Out, Err] = Match[In, Out] | t.Literal[Kind.NoMatch] | Error[Err]
 
     class Kind(Enum):
         Match = 0
@@ -21,11 +21,11 @@ class ParseResult:
             assert False, f"Unwrapping failed: ParseResult is not ParseResult.Match"
 
     @dataclass
-    class Match[T, In]:
-        item: T
+    class Match[In, Out]:
+        item: Out
         remaining: Stream[In]
 
-        def unwrap(self) -> tuple[T, Stream[In]]:
+        def unwrap(self) -> tuple[Out, Stream[In]]:
             return self.item, self.remaining
 
     NoMatch: t.Final[t.Literal[Kind.NoMatch]] = Kind.NoMatch
@@ -77,9 +77,7 @@ class Parser[In, Out, Err](ABC):
         SecondOut
     ](
         self,
-        other_func: t.Callable[
-            [tuple[Out, Stream[In]]], ParseResult.Type[In, SecondOut, Err]
-        ],
+        other_func: t.Callable[[Out, Stream[In]], ParseResult.Type[In, SecondOut, Err]],
     ) -> "ThenWithContext[In, Out, SecondOut, Err]":
         return ThenWithContext(self, other_func)
 
@@ -231,9 +229,7 @@ class ThenWithContext[In, Context, SecondOut, Err](
     Parser[In, tuple[Context, SecondOut], Err]
 ):
     first: Parser[In, Context, Err]
-    second: t.Callable[
-        [tuple[Context, Stream[In]]], ParseResult.Type[In, SecondOut, Err]
-    ]  # TODO: Use lambda with two parameters
+    second: t.Callable[[Context, Stream[In]], ParseResult.Type[In, SecondOut, Err]]
 
     @t.override
     def parse(
@@ -252,7 +248,7 @@ class ThenWithContext[In, Context, SecondOut, Err](
         context = first_result.item
         first_pos = first_result.remaining
 
-        match self.second((context, first_pos)):
+        match self.second(context, first_pos):
             case PR.Match(second_item, pos):
                 return PR.Match((context, second_item), pos)
             case PR.NoMatch as nm:
@@ -489,8 +485,10 @@ class AndCheck[In, Out, Err](Parser[In, Out, Err]):
                 if self.predicate(item):
                     return PR.Match(item, remaining)
                 return PR.NoMatch
-            case no_match_or_err:
-                return no_match_or_err
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error(err):
+                return PR.Error(err)
 
 
 @dataclass

@@ -1,3 +1,4 @@
+import typing as t
 from opyl.compile.error import LexError
 from opyl.compile.token import (
     IntegerLiteralBase,
@@ -19,6 +20,7 @@ from opyl.support.combinator import (
     OneOf,
     choice,
     startswith,
+    Parser,
 )
 from opyl.support.stream import Stream
 
@@ -31,32 +33,51 @@ bin = one_of("01")
 dec = one_of("0123456789")
 hex = one_of("0123456789abcdefABCDEF")
 
-bin_integer = (
-    startswith("0b")
-    .ignore_then(bin.repeated().at_least(1).require(LexError.MalformedIntegerLiteral))
-    .map(lambda chars: "".join(chars))
-    .map(lambda string: int(string, base=2))
-).map(lambda integer: IntegerLiteral(integer, IntegerLiteralBase.Binary))
+
+def padded(
+    padder: Parser[str, str, LexError], parser: Parser[str, str, LexError]
+) -> Parser[str, str, LexError]:
+    return padder.or_not().ignore_then(parser).then_ignore(padder.or_not())
+
+
+def integer_digits(
+    digs: Parser[str, str, LexError]
+) -> Parser[str, list[str], LexError]:
+    return (
+        padded(just("_"), digs)
+        .repeated()
+        .at_least(1)
+        .require(LexError.MalformedIntegerLiteral)
+    )
+
+
+def integer_mapper(base: int) -> t.Callable[[list[str]], IntegerLiteral]:
+    literal_base = {
+        2: IntegerLiteralBase.Binary,
+        10: IntegerLiteralBase.Decimal,
+        16: IntegerLiteralBase.Hexadecimal,
+    }[base]
+
+    return lambda chars: IntegerLiteral(
+        int("".join(chars), base=base), base=literal_base
+    )
+
+
+bin_integer = startswith("0b").ignore_then(integer_digits(bin)).map(integer_mapper(2))
 
 dec_integer = (
-    dec.and_check(lambda char: char != "0")
-    .chain(dec.repeated())
-    .map(lambda chars: "".join(chars))
-    .map(lambda string: int(string, base=10))
-).map(lambda integer: IntegerLiteral(integer, IntegerLiteralBase.Decimal))
+    dec.and_check(lambda char: char != "0").chain(padded(just("_"), dec).repeated())
+).map(integer_mapper(10))
 
-hex_integer = (
-    startswith("0x")
-    .ignore_then(hex.repeated().at_least(1).require(LexError.MalformedIntegerLiteral))
-    .map(lambda chars: "".join(chars))
-    .map(lambda string: int(string, base=16))
-).map(lambda integer: IntegerLiteral(integer, IntegerLiteralBase.Hexadecimal))
+hex_integer = (startswith("0x").ignore_then(integer_digits(hex))).map(
+    integer_mapper(16)
+)
 
 integer = (
     bin_integer
     | dec_integer
     | hex_integer
-    | Just("0")
+    | just("0")
     .map(lambda char: int(char, base=10))
     .map(lambda zero: IntegerLiteral(zero))
 )
@@ -129,14 +150,18 @@ comment = (
     .map(lambda chars: "".join(chars))
 ).map(Comment)
 
+strip = (whitespace | comment).repeated().or_not()
+
 # TODO: Update identifier / keyword parsers so that this isn't
 # position dependent.
 token = integer | keyword | identifier | basic | string | character
 
-tokenizer = (whitespace | comment).repeated().or_not().ignore_then(token).repeated()
+tokenizer = strip.ignore_then(token).repeated()
 
 
-def tokenize(source: str) -> ParseResult.Type[str, Stream[Token], LexError]:
+def tokenize(
+    source: str,
+) -> ParseResult.Type[str, Stream[Token], LexError]:
     match tokenizer.parse(Stream(list(source))):
         case PR.Match(toks, rem):
             return PR.Match(Stream(toks), rem)

@@ -71,6 +71,17 @@ class TestIntegerLiteral:
             IntegerLiteral(0xDEADBEEF, IntegerLiteralBase.Hexadecimal),
         )
 
+    def test_underscore_in_literal(self):
+        parse_test(integer, "4_5", IntegerLiteral(45))
+
+    def test_invalid_integer_leading_underscore(self):
+        parse_test(integer, "_45", None)
+
+    def test_underscore_in_hex_literal(self):
+        parse_test(
+            integer, "0x_4_5", IntegerLiteral(0x45, IntegerLiteralBase.Hexadecimal)
+        )
+
 
 class TestIdentifier:
     def test_ident(self):
