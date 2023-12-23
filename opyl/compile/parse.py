@@ -33,9 +33,10 @@ def block[
     Token, list[T], ParseError
 ]:
     return newlines.ignore_then(
-        lines(these)
-        .delimited_by(just(Basic.LeftBrace), just(Basic.RightBrace))
-        .require(ParseError(expected="}", following=label))
+        lines(these).delimited_by(
+            just(Basic.LeftBrace),
+            just(Basic.RightBrace).require(ParseError(expected="}", following=label)),
+        )
     )
 
 

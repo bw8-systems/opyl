@@ -74,9 +74,14 @@ def expression(precedence: int) -> Expression:
 expr = expression(0)
 
 grouped_expr = (
-    just(Basic.LeftParenthesis)
-    .ignore_then(newlines)
-    .ignore_then(expr.then_ignore(newlines).then_ignore(just(Basic.RightParenthesis)))
+    newlines.ignore_then(expr)
+    .then_ignore(newlines)
+    .delimited_by(
+        just(Basic.LeftParenthesis),
+        just(Basic.RightParenthesis).require(
+            ParseError(expected="')'", following="grouped expression")
+        ),
+    )
 )
 
 
@@ -96,27 +101,35 @@ def bin_op_expr(left: ex.Expression) -> Parser[Token, BinaryExpression, ParseErr
 
 
 def call_expr(function: ex.Expression) -> Parser[Token, CallExpression, ParseError]:
-    args = (
-        expr.separated_by(just(Basic.Comma).then_ignore(newlines))
-        .allow_trailing()
-        .then_ignore(newlines)
-        .then_ignore(just(Basic.RightParenthesis))
-    ).map(lambda args: CallExpression(function, args))
-
-    return just(Basic.LeftParenthesis).ignore_then(newlines).ignore_then(args)
+    return (
+        newlines.ignore_then(
+            expr.separated_by(just(Basic.Comma).then_ignore(newlines))
+            .allow_trailing()
+            .then_ignore(newlines)
+        )
+        .delimited_by(
+            just(Basic.LeftParenthesis),
+            just(Basic.RightParenthesis).require(
+                ParseError(expected="')'", following="call argument list")
+            ),
+        )
+        .map(lambda args: CallExpression(function, args))
+    )
 
 
 def subscript_expr(
     base: ex.Expression,
 ) -> Parser[Token, SubscriptExpression, ParseError]:
     return (
-        just(Basic.LeftBracket)
-        .ignore_then(newlines)
-        .ignore_then(expr)
+        newlines.ignore_then(expr)
         .then_ignore(newlines)
-        .then_ignore(just(Basic.RightBracket))
-        .map(lambda index: SubscriptExpression(base, index))
-    )
+        .delimited_by(
+            just(Basic.LeftBracket),
+            just(Basic.RightBracket).require(
+                ParseError(expected="']'", following="subscript expression (foo[bar])")
+            ),
+        )
+    ).map(lambda index: SubscriptExpression(base, index))
 
 
 def member_access_expr(
@@ -124,7 +137,13 @@ def member_access_expr(
 ) -> Parser[Token, MemberAccessExpression, ParseError]:
     return (
         just(Basic.Period)
-        .ignore_then(ident)
+        .ignore_then(
+            ident.require(
+                ParseError(
+                    expected="identifier", following="member access operator '.'"
+                )
+            )
+        )
         .map(lambda member: MemberAccessExpression(base, member))
     )
 

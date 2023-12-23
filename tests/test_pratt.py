@@ -60,6 +60,13 @@ def test_subscript_expr():
     assert item == SubscriptExpression(Identifier("foo"), Identifier("bar"))
 
 
+def test_invalid_subscript_expr():
+    tokens = lex.tokenize("foo[bar").unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap_err()[0]
+    assert item.expected == "']'"
+
+
 def test_subscript_expr_complex_index():
     tokens = lex.tokenize("foo[1 + 2]").unwrap()[0]
     result = pratt.expr.parse(tokens)
@@ -95,11 +102,25 @@ def test_call_expr_no_args():
     assert item == CallExpression(Identifier("function"), [])
 
 
+def test_invalid_call_expr():
+    tokens = lex.tokenize("function(foo, 1").unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap_err()[0]
+    assert item.expected == "')'"
+
+
 def test_member_access():
     tokens = lex.tokenize("foo.bar").unwrap()[0]
     result = pratt.expr.parse(tokens)
     item = result.unwrap()[0]
     assert item == MemberAccessExpression(Identifier("foo"), Identifier("bar"))
+
+
+def test_invalid_member_access():
+    tokens = lex.tokenize("foo.5").unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap_err()[0]
+    assert item.expected == "identifier"
 
 
 def test_grouped_expr_line_breaks():
@@ -149,3 +170,10 @@ def test_function_call_with_line_breaks():
         Identifier("function"),
         [Identifier("alpha"), Identifier("bravo"), Identifier("charlie")],
     )
+
+
+def test_unclosed_group():
+    tokens = lex.tokenize("(4 + 2").unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap_err()[0]
+    assert item.expected == "')'"
