@@ -16,7 +16,7 @@ def panic(message: str) -> t.NoReturn:
 def parse_test(
     parser: Parser[t.Any, t.Any, t.Any], source: str, expected: Token | None
 ):
-    stream = Stream[str].from_source(source)
+    stream = Stream.from_source(source)
 
     result = parser.parse(stream)
     pprint(f"Parser: {parser}")

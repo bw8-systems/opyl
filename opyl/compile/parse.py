@@ -35,7 +35,7 @@ def block[
     return newlines.ignore_then(
         lines(these).delimited_by(
             just(Basic.LeftBrace),
-            just(Basic.RightBrace).require(ParseError(expected="}", following=label)),
+            just(Basic.RightBrace),
         )
     )
 
@@ -198,7 +198,7 @@ enum_decl = (
     .then_ignore(just(Basic.NewLine).or_not())
     .then(
         newlines.ignore_then(ident)
-        .separated_by(just(Basic.Comma).then(just(Basic.NewLine).repeated()))
+        .separated_by(just(Basic.Comma).then(newlines))
         .allow_trailing()
         .delimited_by(
             start=just(Basic.LeftBrace),

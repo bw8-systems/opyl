@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Opal bootstrap transpiler in Python"
 authors = ["bwburnsides <19192452+bwburnsides@users.noreply.github.com>"]
 readme = "README.md"
-packages = [{ include = "**/*.py", from = "." }]
 
 [tool.poetry.dependencies]
 python = "^3.12.0"
