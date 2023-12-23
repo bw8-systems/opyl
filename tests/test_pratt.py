@@ -8,6 +8,7 @@ from opyl.compile.expr import (
     BinOp,
     CallExpression,
     SubscriptExpression,
+    MemberAccessExpression,
 )
 
 
@@ -92,6 +93,13 @@ def test_call_expr_no_args():
     result = pratt.expr.parse(tokens)
     item = result.unwrap()[0]
     assert item == CallExpression(Identifier("function"), [])
+
+
+def test_member_access():
+    tokens = lex.tokenize("foo.bar").unwrap()[0]
+    result = pratt.expr.parse(tokens)
+    item = result.unwrap()[0]
+    assert item == MemberAccessExpression(Identifier("foo"), Identifier("bar"))
 
 
 def test_grouped_expr_line_breaks():

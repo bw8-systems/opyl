@@ -7,7 +7,7 @@ class Keyword(Enum):
     Trait = "trait"
     Enum = "enum"
     Struct = "struct"
-    Union = "union"
+    Type = "type"
     Let = "let"
     Const = "const"
     Def = "def"

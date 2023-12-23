@@ -1,7 +1,10 @@
+import textwrap
+
 from opyl.compile import lex, parse
 from opyl.compile.token import Basic, IntegerLiteral
 from opyl.compile.ast import Field, ConstDeclaration, VarDeclaration
 from opyl.compile import ast
+from opyl.compile import expr
 from opyl.compile.token import Identifier
 from opyl.support.combinator import ParseResult, PR
 from opyl.support.union import Maybe
@@ -116,4 +119,260 @@ def test_func_sig_without_return():
             )
         ],
         Maybe.Nothing,
+    )
+
+
+def test_empty_if():
+    source = textwrap.dedent(
+        """if args == 0 {
+
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.if_stmt.parse(tokens).unwrap()[0]
+    assert result == ast.IfStatement(
+        if_condition=expr.BinaryExpression(
+            expr.BinOp.Equal, Identifier("args"), IntegerLiteral(0)
+        ),
+        if_statements=[],
+        else_statements=[],
+    )
+
+
+def test_empty_struct():
+    source = "struct Arguments {}"
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.struct_decl.parse(tokens).unwrap()[0]
+    assert result == ast.StructDeclaration(
+        name=Identifier("Arguments"), fields=[], functions=[]
+    )
+
+
+def test_struct_with_field():
+    source = textwrap.dedent(
+        """struct Arguments {
+            count: u8
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.struct_decl.parse(tokens).unwrap()[0]
+    assert result == ast.StructDeclaration(
+        name=Identifier("Arguments"),
+        fields=[ast.Field(name=Identifier("count"), type=Identifier("u8"))],
+        functions=[],
+    )
+
+
+def test_struct_with_func():
+    source = textwrap.dedent(
+        """struct Arguments {
+            def len() -> u8 {}
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.struct_decl.parse(tokens).unwrap()[0]
+    assert result == ast.StructDeclaration(
+        name=Identifier("Arguments"),
+        fields=[],
+        functions=[
+            ast.FunctionDeclaration(
+                name=Identifier("len"),
+                signature=ast.FunctionSignature(
+                    Identifier("len"), [], Maybe.Just(Identifier("u8"))
+                ),
+                body=[],
+            )
+        ],
+    )
+
+
+def test_struct_with_field_and_func():
+    source = textwrap.dedent(
+        """struct Arguments {
+            count: u8
+            def len() -> u8 {}
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.struct_decl.parse(tokens).unwrap()[0]
+    assert result == ast.StructDeclaration(
+        name=Identifier("Arguments"),
+        fields=[ast.Field(name=Identifier("count"), type=Identifier("u8"))],
+        functions=[
+            ast.FunctionDeclaration(
+                name=Identifier("len"),
+                signature=ast.FunctionSignature(
+                    Identifier("len"), [], Maybe.Just(Identifier("u8"))
+                ),
+                body=[],
+            )
+        ],
+    )
+
+
+def test_empty_enum():
+    source = textwrap.dedent("enum Color {}")
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.enum_decl.parse(tokens).unwrap()[0]
+    assert result == ast.EnumDeclaration(
+        name=Identifier("Color"),
+        members=[],
+    )
+
+
+def test_enum_single_value():
+    source = textwrap.dedent("enum Color {Red}")
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.enum_decl.parse(tokens).unwrap()[0]
+    assert result == ast.EnumDeclaration(
+        name=Identifier("Color"),
+        members=[Identifier("Red")],
+    )
+
+
+def test_enum_multi_value():
+    source = textwrap.dedent("enum Color {Red, Green}")
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.enum_decl.parse(tokens).unwrap()[0]
+    assert result == ast.EnumDeclaration(
+        name=Identifier("Color"),
+        members=[Identifier("Red"), Identifier("Green")],
+    )
+
+
+def test_enum_multi_value_linesplit():
+    source = textwrap.dedent(
+        """enum Color {
+            Red,
+            Green
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.enum_decl.parse(tokens).unwrap()[0]
+    assert result == ast.EnumDeclaration(
+        name=Identifier("Color"),
+        members=[Identifier("Red"), Identifier("Green")],
+    )
+
+
+def test_enum_trailing_comma():
+    source = textwrap.dedent(
+        """enum Color {
+            Red,
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.enum_decl.parse(tokens).unwrap()[0]
+    assert result == ast.EnumDeclaration(
+        name=Identifier("Color"),
+        members=[Identifier("Red")],
+    )
+
+
+def test_if_stmt_no_body():
+    tokens = lex.tokenize("if expr {}").unwrap()[0]
+    result = parse.if_stmt.parse(tokens).unwrap()[0]
+    assert result == ast.IfStatement(
+        if_condition=Identifier("expr"),
+        if_statements=[],
+        else_statements=[],
+    )
+
+
+def test_if_stmt_with_body():
+    source = textwrap.dedent(
+        """if expr {
+            1 + 2
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.if_stmt.parse(tokens).unwrap()[0]
+    assert result == ast.IfStatement(
+        if_condition=Identifier("expr"),
+        if_statements=[
+            expr.BinaryExpression(
+                expr.BinOp.Addition, IntegerLiteral(1), IntegerLiteral(2)
+            )
+        ],
+        else_statements=[],
+    )
+
+
+def test_simple_type_def():
+    tokens = lex.tokenize("type ParseResult = Match").unwrap()[0]
+    result = parse.type_def.parse(tokens).unwrap()[0]
+    assert result == ast.TypeDefinition(
+        name=Identifier("ParseResult"), types=[Identifier("Match")]
+    )
+
+
+def test_union_type_def():
+    tokens = lex.tokenize("type ParseResult = Match | NoMatch").unwrap()[0]
+    result = parse.type_def.parse(tokens).unwrap()[0]
+    assert result == ast.TypeDefinition(
+        name=Identifier("ParseResult"),
+        types=[Identifier("Match"), Identifier("NoMatch")],
+    )
+
+
+def test_when_stmt_empty():
+    tokens = lex.tokenize("when val {}").unwrap()[0]
+    result = parse.when_stmt.parse(tokens).unwrap()[0]
+    assert result == ast.WhenStatement(
+        expression=Identifier("val"),
+        target=Maybe.Nothing,
+        is_clauses=[],
+        else_statements=[],
+    )
+
+
+def test_when_stmt_empty_with_as():
+    tokens = lex.tokenize("when val as rv {}").unwrap()[0]
+    result = parse.when_stmt.parse(tokens).unwrap()[0]
+    assert result == ast.WhenStatement(
+        expression=Identifier("val"),
+        target=Maybe.Just(Identifier("rv")),
+        is_clauses=[],
+        else_statements=[],
+    )
+
+
+def test_when_stmt_populated():
+    source = textwrap.dedent(
+        """when val {
+            is Foo {}
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.when_stmt.parse(tokens).unwrap()[0]
+    assert result == ast.WhenStatement(
+        expression=Identifier("val"),
+        target=Maybe.Nothing,
+        is_clauses=[ast.IsClause(target=Identifier("Foo"), statements=[])],
+        else_statements=[],
+    )
+
+
+def test_when_stmt_populated_with_as():
+    source = textwrap.dedent(
+        """when val as rv {
+            is Foo {}
+        }
+        """
+    )
+    tokens = lex.tokenize(source).unwrap()[0]
+    result = parse.when_stmt.parse(tokens).unwrap()[0]
+    assert result == ast.WhenStatement(
+        expression=Identifier("val"),
+        target=Maybe.Just(Identifier("rv")),
+        is_clauses=[ast.IsClause(target=Identifier("Foo"), statements=[])],
+        else_statements=[],
     )

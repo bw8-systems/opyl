@@ -20,6 +20,16 @@ type Statement = (
 type Type = Identifier
 
 
+# TODO: This is a stop-gap until more complex types are added to the
+# language, such as generics and const-generics. To avoid syntax
+# ambiguity mitigation features in the syntax, types will be parsed
+# by the Pratt parser as expressions.
+@dataclass
+class ArrayType:
+    base: Type
+    size: int
+
+
 @dataclass
 class Field:
     name: Identifier
@@ -60,7 +70,7 @@ type Declaration = (
     | VarDeclaration
     | EnumDeclaration
     | StructDeclaration
-    | UnionDeclaration
+    | TypeDefinition
     | TraitDeclaration
 )
 
@@ -113,13 +123,9 @@ class StructDeclaration:
 
 
 @dataclass
-class UnionDeclaration:
+class TypeDefinition:
     name: Identifier
-    members: list[Type]  # TODO: The TODO above applies here too.
-    # generic_params: GenericParamSpec
-    # trait_impls: list[str]  # TODO: See TODO above.
-    # methods: list[MethodDeclaration]
-    functions: list[FunctionDeclaration]
+    types: list[Type]
 
 
 @dataclass

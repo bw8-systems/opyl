@@ -2,11 +2,13 @@ import typing as t
 from dataclasses import dataclass
 from enum import Enum
 
-from opyl.compile.token import Basic, Identifier, IntegerLiteral, Token
+from opyl.compile.token import Basic, Identifier, IntegerLiteral, StringLiteral, Token
 
-type InfixExpression = BinaryExpression | CallExpression | SubscriptExpression
+type InfixExpression = BinaryExpression | CallExpression | SubscriptExpression | MemberAccessExpression
 
-type Expression = (Identifier | IntegerLiteral | PrefixExpression | InfixExpression)
+type Expression = (
+    Identifier | IntegerLiteral | StringLiteral | PrefixExpression | InfixExpression
+)
 
 
 class InfixOperator(Enum):
@@ -116,6 +118,12 @@ class CallExpression:
 class SubscriptExpression:
     base: Expression
     index: Expression
+
+
+@dataclass
+class MemberAccessExpression:
+    base: Expression
+    member: Identifier
 
 
 @dataclass

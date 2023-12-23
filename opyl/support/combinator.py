@@ -20,11 +20,15 @@ class ParseResult:
 
         def unwrap(self) -> t.NoReturn:
             assert self is self.NoMatch
-            assert False, "Unwrapping failed: ParseResult is not ParseResult.Match"
+            assert (
+                False
+            ), "Unwrapping failed: ParseResult.NoMatch is not ParseResult.Match"
 
         def unwrap_err(self) -> t.NoReturn:
             assert self is self.NoMatch
-            assert False, "Unwrapping failed: ParseResult is not ParseResult.Error"
+            assert (
+                False
+            ), "Unwrapping failed: ParseResult.NoMatch is not ParseResult.Error"
 
     @dataclass
     class Match[In, Out]:
@@ -35,7 +39,9 @@ class ParseResult:
             return self.item, self.remaining
 
         def unwrap_err(self) -> t.NoReturn:
-            assert False, "Unwrapping failed, ParseResult is not ParseResult.Error"
+            assert (
+                False
+            ), "Unwrapping failed, ParseResult.Match is not ParseResult.Error"
 
     NoMatch: t.Final[t.Literal[Kind.NoMatch]] = Kind.NoMatch
 
@@ -45,7 +51,9 @@ class ParseResult:
         span: Span
 
         def unwrap(self) -> t.NoReturn:
-            assert False, "Unwrapping failed: ParseResult is not ParseResult.Match"
+            assert (
+                False
+            ), "Unwrapping failed: ParseResult.Match is not ParseResult.Match"
 
         def unwrap_err(self) -> tuple[Kind, Span]:
             return self.value, self.span
@@ -156,6 +164,10 @@ class Parser[In, Out, Err](ABC):
     def to[Into](self, item: Into) -> "To[In, Out, Into, Err]":
         return To(self, item)
 
+    @t.final
+    def boolean(self) -> "Boolean[In, Err]":
+        return Boolean(self)
+
 
 @dataclass
 class Require[In, Out, Err](Parser[In, Out, Err]):
@@ -245,8 +257,6 @@ class Then[In, FirstOut, SecondOut, Err](Parser[In, tuple[FirstOut, SecondOut], 
                 return PR.NoMatch
             case PR.Error() as error:
                 return error
-
-        raise RuntimeError("Something went wrong. This should not be reachable.")
 
 
 @dataclass
@@ -555,8 +565,6 @@ class Repeated[In, Out, Err](Parser[In, list[Out], Err]):
                 case PR.Error() as err:
                     return err
 
-        raise RuntimeError("Something went wrong. This should not have been reachable.")
-
     def at_least(self, minimum: int) -> t.Self:
         other = copy.copy(self)
         other._at_least = minimum
@@ -591,6 +599,21 @@ class Just[In, Err](Parser[In, In, Err]):
                 return PR.NoMatch
             case Maybe.Nothing:
                 return PR.NoMatch
+
+
+@dataclass
+class Boolean[In, Err](Parser[In, bool, Err]):
+    parser: Parser[In, t.Any, Err]
+
+    @t.override
+    def parse(self, input: Stream[In]) -> ParseResult.Type[In, bool, Err]:
+        match self.parser.parse(input):
+            case PR.Match(_, pos):
+                return PR.Match(True, pos)
+            case PR.NoMatch:
+                return PR.Match(False, input)
+            case PR.Error() as err:
+                return err
 
 
 @dataclass

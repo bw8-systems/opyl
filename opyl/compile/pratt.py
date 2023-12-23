@@ -11,11 +11,12 @@ from opyl.compile.expr import (
     InfixExpression,
     PrefixOperator,
     SubscriptExpression,
+    MemberAccessExpression,
     PrefixExpression,
 )
 from opyl.support.combinator import PR, Parser, ParseResult
 from opyl.support.stream import Stream
-from opyl.support.atoms import just, filt, ident, integer, newlines
+from opyl.support.atoms import just, filt, ident, integer, newlines, string
 from opyl.support.union import Maybe
 
 
@@ -29,6 +30,8 @@ def check_precedence(input: Stream[Token]) -> int:
                 case paren if paren is Basic.LeftParenthesis:
                     return 8
                 case brack if brack is Basic.LeftBracket:
+                    return 8
+                case period if period is Basic.Period:
                     return 8
                 case _:
                     return 0
@@ -116,6 +119,16 @@ def subscript_expr(
     )
 
 
+def member_access_expr(
+    base: ex.Expression,
+) -> Parser[Token, MemberAccessExpression, ParseError]:
+    return (
+        just(Basic.Period)
+        .ignore_then(ident)
+        .map(lambda member: MemberAccessExpression(base, member))
+    )
+
+
 prefix_op_expr = (
     filt(lambda op: isinstance(op, Basic) and op in PrefixOperator)
     .map(lambda op: PrefixOperator(op))
@@ -123,8 +136,13 @@ prefix_op_expr = (
     .map(lambda op_right: PrefixExpression(op_right[0], op_right[1]))
 )
 
-prefix_parser = grouped_expr | prefix_op_expr | ident | integer
+prefix_parser = grouped_expr | prefix_op_expr | ident | integer | string
 
 
 def infix_parser(left: ex.Expression) -> Parser[Token, InfixExpression, ParseError]:
-    return bin_op_expr(left) | call_expr(left) | subscript_expr(left)
+    return (
+        bin_op_expr(left)
+        | call_expr(left)
+        | subscript_expr(left)
+        | member_access_expr(left)
+    )

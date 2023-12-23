@@ -1,4 +1,5 @@
 import argparse
+from pprint import pprint
 
 from opyl.compile import lex
 from opyl.compile import parse
@@ -17,8 +18,8 @@ def main():
     stream = lex.tokenize(source).unwrap()[0]
 
     match parse.parse(stream):
-        case PR.Match():
-            ...
+        case PR.Match(item):
+            pprint(item)
         case PR.NoMatch:
             ...
         case PR.Error(err, span):

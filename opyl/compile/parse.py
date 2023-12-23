@@ -1,8 +1,7 @@
 import typing as t
 
-from opyl.compile import token
 from opyl.compile import ast
-from opyl.compile.token import Token, Keyword, Basic
+from opyl.compile.token import Token, Keyword, Basic, Identifier
 from opyl.compile.error import ParseError
 from opyl.compile.pratt import expr
 from opyl.support.stream import Stream
@@ -11,15 +10,76 @@ from opyl.support.union import Maybe
 from opyl.support.atoms import just, ident, newlines
 
 
-def block[T](item: Parser[Token, T, ParseError]) -> Parser[Token, list[T], ParseError]:
+class Statement(Parser[Token, ast.Statement, ParseError]):
+    @t.override
+    def parse(
+        self, input: Stream[Token]
+    ) -> ParseResult.Type[Token, ast.Statement, ParseError]:
+        return (
+            return_stmt
+            | if_stmt
+            | for_loop
+            | while_loop
+            | when_stmt
+            | let_decl
+            | const_decl
+            | expr
+        ).parse(input)
+
+
+def block[
+    T
+](these: Parser[Token, T, ParseError], label: str = "block") -> Parser[
+    Token, list[T], ParseError
+]:
+    return newlines.ignore_then(
+        lines(these)
+        .delimited_by(just(Basic.LeftBrace), just(Basic.RightBrace))
+        .require(ParseError(expected="}", following=label))
+    )
+
+
+def block_pair[
+    T, U
+](
+    these: Parser[Token, T, ParseError],
+    those: Parser[Token, U, ParseError],
+    label: str = "block",
+) -> Parser[Token, tuple[list[T], list[U]], ParseError]:
     return (
-        just(Basic.LeftBrace)
-        .ignore_then(item.repeated())
-        .then_ignore(just(Basic.RightBrace))
+        newlines.ignore_then(
+            these.separated_by(newlines.at_least(1))
+            .allow_leading()
+            .allow_trailing()
+            .then(
+                those.separated_by(newlines.at_least(1))
+                .allow_leading()
+                .allow_trailing()
+            )
+        )
+        .delimited_by(just(Basic.LeftBrace), just(Basic.RightBrace))
+        .require(ParseError(expected="'}'", following=label))
+    )
+
+
+def lines[
+    T
+](parser: Parser[Token, T, ParseError]) -> Parser[Token, list[T], ParseError]:
+    return newlines.ignore_then(
+        parser.separated_by(newlines.at_least(1)).allow_leading().allow_trailing()
+    )
+
+
+def named_decl(keyword: Keyword) -> Parser[Token, Identifier, ParseError]:
+    return just(keyword).ignore_then(
+        ident.require(
+            ParseError(expected="identifier", following=f"'{keyword.value}' keyword")
+        )
     )
 
 
 type = ident
+
 
 field = ident.then(
     just(Basic.Colon).ignore_then(
@@ -27,14 +87,14 @@ field = ident.then(
     )
 ).map(lambda items: ast.Field(name=items[0], type=items[1]))
 
+initializer = just(Basic.Equal).ignore_then(
+    expr.require(ParseError(expected="expression", following="'='"))
+)
+
 const_decl = (
     just(Keyword.Const)
     .ignore_then(field)
-    .then(
-        just(Basic.Equal).ignore_then(
-            expr.require(ParseError(expected="expression", following="'='"))
-        )
-    )
+    .then(initializer)
     .map(
         lambda items: ast.ConstDeclaration(
             name=items[0].name,
@@ -46,18 +106,9 @@ const_decl = (
 
 let_decl = (
     just(Keyword.Let)
-    .ignore_then(just(Keyword.Mut).or_not().map(lambda mut: mut is not Maybe.Nothing))
+    .ignore_then(just(Keyword.Mut).boolean())
     .then(field)
-    .require(
-        ParseError(expected="field of form 'name: Type'", following="'let' keyword")
-    )
-    .then(
-        just(Basic.Equal)
-        .ignore_then(expr)
-        .require(
-            ParseError(expected="initializer", following="'let' variable declaration")
-        )
-    )
+    .then(initializer)
     .map(
         lambda items: ast.VarDeclaration(
             is_mut=items[0][0],
@@ -68,38 +119,27 @@ let_decl = (
     )
 )
 
+# TODO: Error handling: Identifier should not be required if `anon` wasn't
+# present because in that case the identifier is the first token of the node.
 param_spec = (
     just(Keyword.Anon)
-    .or_not()
-    .map(lambda anon: anon is not Maybe.Nothing)
-    .then(
-        ident
-    )  # TODO: Error description here: Identifier should not be required if `anon` wasn't present.
-    .then_ignore(
-        just(Basic.Colon).require(ParseError(expected="':'", following="identifier"))
-    )
-    .then(
-        just(Keyword.Mut)
-        .or_not()
-        .map(lambda mut: mut is not Maybe.Nothing)
-        .then(type)
-        .require(ParseError(expected="type", following="':'"))
-    )
+    .boolean()
+    .then(ident)
+    .then_ignore(just(Basic.Colon))
+    .then(just(Keyword.Mut).boolean())
+    .then(type)
     .map(
         lambda items: ast.ParamSpec(
-            is_anon=items[0][0],
-            ident=items[0][1],
-            is_mut=items[1][0],
-            type=items[1][1],
+            is_anon=items[0][0][0],
+            ident=items[0][0][1],
+            is_mut=items[0][1],
+            type=items[1],
         )
     )
 )
 
 func_sig = (
-    just(Keyword.Def)
-    .ignore_then(
-        ident.require(ParseError(expected="identifier", following="'def' keyword"))
-    )
+    named_decl(Keyword.Def)
     .then(
         newlines.ignore_then(param_spec)
         .separated_by(just(Basic.Comma))
@@ -121,78 +161,39 @@ func_sig = (
     )
 )
 
-
-class Statement(Parser[Token, ast.Statement, ParseError]):
-    @t.override
-    def parse(
-        self, input: Stream[token.Token]
-    ) -> ParseResult.Type[Token, ast.Statement, ParseError]:
-        return (
-            return_stmt
-            | if_stmt
-            | for_loop
-            | while_loop
-            | when_stmt
-            | let_decl
-            | const_decl
-            | expr
-        ).parse(input)
-
-
 stmt = Statement()
 
-break_stmt = just(Keyword.Break).map(lambda _: ast.BreakStatement())
-continue_stmt = just(Keyword.Continue).map(lambda _: ast.ContinueStatement())
+
+break_stmt = just(Keyword.Break).to(ast.BreakStatement())
+continue_stmt = just(Keyword.Continue).to(ast.ContinueStatement())
 return_stmt = (
     just(Keyword.Return)
     .ignore_then(expr)
     .map(lambda item: ast.ReturnStatement(expression=Maybe.Just(item)))
 )
 
-func_decl = (
-    func_sig.then_ignore(just(Basic.NewLine).or_not())
-    .then(
-        newlines.ignore_then(
-            stmt.separated_by(newlines.at_least(1)).allow_leading().allow_trailing()
-        ).delimited_by(start=just(Basic.LeftBrace), end=just(Basic.RightBrace))
-    )
-    .map(
-        lambda items: ast.FunctionDeclaration(
-            name=items[0].name,
-            signature=items[0],
-            body=items[1],
-        )
+func_decl = func_sig.then(block(stmt, "function definition")).map(
+    lambda items: ast.FunctionDeclaration(
+        name=items[0].name,
+        signature=items[0],
+        body=items[1],
     )
 )
 
 struct_decl = (
-    just(Keyword.Struct)
-    .ignore_then(
-        ident.require(ParseError(expected="identifier", following="'struct' keyword"))
-    )
-    .then_ignore(just(Basic.NewLine).or_not())
-    .then(
-        (field.then_ignore(newlines.at_least(1)))
-        .repeated()
-        .delimited_by(
-            start=just(Basic.LeftBrace),
-            end=newlines.ignore_then(just(Basic.RightBrace)),
-        )
-    )
+    named_decl(Keyword.Struct)
+    .then(block_pair(field, func_decl, "struct definition"))
     .map(
         lambda items: ast.StructDeclaration(
             name=items[0],
-            fields=items[1],
-            functions=[],
+            fields=items[1][0],
+            functions=items[1][1],
         )
     )
 )
 
 enum_decl = (
-    just(Keyword.Enum)
-    .ignore_then(
-        ident.require(ParseError(expected="identifier", following="'enum' keyword"))
-    )
+    named_decl(Keyword.Enum)
     .then_ignore(just(Basic.NewLine).or_not())
     .then(
         newlines.ignore_then(ident)
@@ -206,61 +207,31 @@ enum_decl = (
     .map(lambda items: ast.EnumDeclaration(name=items[0], members=items[1]))
 )
 
-union_decl = (
-    just(Keyword.Union)
-    .ignore_then(
-        ident.require(ParseError(expected="identifier", following="'union' keyword"))
-    )
+type_def = (
+    named_decl(Keyword.Type)
     .then_ignore(just(Basic.Equal))
-    .then(type.separated_by(just(Basic.Pipe)).at_least(2))
-    .then_ignore(just(Basic.NewLine).or_not())
-    .then(
-        (
-            just(Basic.LeftBrace)
-            .ignore_then(
-                newlines.ignore_then(func_decl)
-                .separated_by(just(Basic.NewLine).repeated())
-                .allow_leading()
-                .allow_trailing()
-            )
-            .then_ignore(just(Basic.RightBrace))
-        ).or_else([])
-    )
-    .map(
-        lambda items: ast.UnionDeclaration(
-            name=items[0][0],
-            members=items[0][1],
-            functions=items[1],
-        )
-    )
-)
+    .then(type.separated_by(just(Basic.Pipe)).at_least(1))
+).map(lambda items: ast.TypeDefinition(*items))
 
 trait_decl = (
     just(Keyword.Trait)
     .ignore_then(
         ident.require(ParseError(expected="identifier", following="'trait' keyword"))
     )
-    .then_ignore(just(Basic.NewLine).or_not())
-    .then(
-        newlines.ignore_then(func_sig)
-        .separated_by(just(Basic.NewLine).repeated())
-        .allow_trailing()
-        .delimited_by(
-            start=just(Basic.LeftBrace),
-            end=newlines.ignore_then(just(Basic.RightBrace)),
-        )
-    )
+    .then(block(func_sig, "trait definition"))
     .map(lambda items: ast.TraitDeclaration(*items))
 )
 
+
+else_block = just(Keyword.Else).ignore_then(block(stmt, "else block"))
 
 if_stmt = (
     just(Keyword.If)
     .ignore_then(
         expr.require(ParseError(expected="expression", following="'if' keyword"))
     )
-    .then(block(stmt).map(lambda _stmts: []))
-    .then(just(Keyword.Else).or_not().ignore_then(block(stmt).map(lambda _stmts: [])))
+    .then(block(stmt))
+    .then(else_block.or_else([]))
     .map(
         lambda items: ast.IfStatement(
             if_condition=items[0][0],
@@ -276,12 +247,11 @@ while_loop = (
     just(Keyword.While)
     .ignore_then(expr)
     .then(block(loop_stmt))
-    .map(lambda items: ast.WhileLoop(condition=items[0], statements=items[1]))
+    .map(lambda items: ast.WhileLoop(*items))
 )
 
 for_loop = (
-    just(Keyword.For)
-    .ignore_then(ident)
+    named_decl(Keyword.For)
     .then_ignore(just(Keyword.In))
     .then(expr)
     .then(block(loop_stmt))
@@ -294,48 +264,31 @@ for_loop = (
 
 is_arm = (
     just(Keyword.Is)
-    .ignore_then(type)
+    .ignore_then(type.require(ParseError(expected="type", following="'is' keyword")))
     .then(block(stmt))
     .map(lambda items: ast.IsClause(*items))
 )
 
-when_stmt = (  # Definitely needs closer look at the optional parts
+# TODO: Multiple else clauses should be an error. Its okay if its not a syntax errors
+# however the way that this parser is constructed causes information about whether there
+# were multiple else clauses is lost. I just wanted to reuse the block_pair parser
+# because needing to chain newlines and allow_trailing etc is verbose and muddying.
+when_stmt = (
     just(Keyword.When)
     .ignore_then(expr)
     .then(just(Keyword.As).ignore_then(ident).or_not())
     .then(
-        is_arm.separated_by(just(Basic.NewLine))
-        .then(
-            just(Keyword.Else)
-            .ignore_then(block(stmt))
-            .or_not()
-            .map(lambda stmts: list[ast.Statement]())  # TODO: testing only
-        )
-        .delimited_by(start=just(Basic.LeftBrace), end=just(Basic.RightBrace))
+        lines(is_arm)
+        .then(else_block.or_else([]))
+        .delimited_by(just(Basic.LeftBrace), just(Basic.RightBrace))
     )
-    .map(
-        lambda items: ast.WhenStatement(
-            expression=items[0][0],
-            target=items[0][1],
-            is_clauses=items[1][0],
-            else_statements=items[1][1],
-        )
-    )
-)
+).map(lambda item: ast.WhenStatement(item[0][0], item[0][1], item[1][0], item[1][1]))
 
 decl = (
-    enum_decl
-    | struct_decl
-    | const_decl
-    | let_decl
-    | func_decl
-    | union_decl
-    | trait_decl
+    enum_decl | struct_decl | const_decl | let_decl | func_decl | type_def | trait_decl
 )
 
-decls = newlines.ignore_then(
-    decl.chain(newlines.at_least(1).ignore_then(decl).repeated())
-)
+decls = lines(decl)
 
 
 def parse(
