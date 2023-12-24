@@ -1,13 +1,5 @@
 type ParseResult = Match | NoMatch | Error
 
-struct Match {
-    
-}
-
-struct NoMatch {}
-
-struct Error {}
-
 struct Arguments {
     count: u8
 
@@ -25,8 +17,6 @@ def main(args: Arguments) -> ExitCode {
         is Match {}
         is NoMatch {}
         is Error {}
-        else {4+2}
+        else {}
     }
-
-    print("Hello, World!")
 }

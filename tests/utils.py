@@ -3,21 +3,17 @@ from pprint import pprint
 
 from opyl.support.combinator import ParseResult, Parser
 from opyl.support.stream import Stream
-from opyl.compile.token import Token
 from opyl.compile.error import LexError
-
-# TODO: Figure out why these don't work with the expr and parser tests
+from opyl.compile import lex
 
 
 def panic(message: str) -> t.NoReturn:
     assert False, message
 
 
-def parse_test(
-    parser: Parser[t.Any, t.Any, t.Any], source: str, expected: Token | None
-):
-    stream = Stream.from_source(source)
-
+def _test[
+    T
+](parser: Parser[t.Any, T, t.Any], stream: Stream[t.Any], expected: T | None,):
     result = parser.parse(stream)
     pprint(f"Parser: {parser}")
     pprint(f"Parsing result: {result}")
@@ -34,6 +30,16 @@ def parse_test(
             ), "Parser did not produce a match when it was expected to."
         case ParseResult.Error() as error:
             panic(f"Parser produced an error when it wasn't expected to: {error}")
+
+
+def lex_test[T](parser: Parser[str, T, t.Any], source: str, expected: T | None):
+    stream = Stream.from_source(source)
+    _test(parser, stream, expected)
+
+
+def parse_test[T](parser: Parser[t.Any, T, t.Any], source: str, expected: T | None):
+    stream = lex.tokenize(source).unwrap()[0]
+    _test(parser, stream, expected)
 
 
 def parse_test_err(

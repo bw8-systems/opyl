@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from copy import copy
 
 from opyl.support.span import Span
+from opyl.support.stream import Source
 
 
 @dataclass
@@ -56,10 +57,7 @@ class ParseError:
         return f"Error: Expected {self.expected} following {self.following}"
 
 
-def format_error(error: ParseError, span: Span, source: str):
-    start, end = to_location(span, source)
+def format_error(error: ParseError, span: Span, source: Source):
+    start, _ = to_location(span, source.text)
 
-    if start.line == end.line:
-        return f"ln {start.line}:{start.column}..{end.column}: {error}"
-    else:
-        return f"ln {start.line}..{end.line}:{end.column}: {error}"
+    return f"{source.file}:{start.line + 1}:{start.column}: {error}"

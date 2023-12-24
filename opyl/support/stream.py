@@ -6,6 +6,12 @@ from opyl.support.span import Spanned, Span
 
 
 @dataclass
+class Source:
+    text: str
+    file: str
+
+
+@dataclass
 class Stream[ItemType]:
     spans: list[Spanned[ItemType]]
     position: int = 0

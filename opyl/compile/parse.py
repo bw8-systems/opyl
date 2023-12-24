@@ -47,19 +47,14 @@ def block_pair[
     those: Parser[Token, U, ParseError],
     label: str = "block",
 ) -> Parser[Token, tuple[list[T], list[U]], ParseError]:
-    return (
-        newlines.ignore_then(
-            these.separated_by(newlines.at_least(1))
-            .allow_leading()
-            .allow_trailing()
-            .then(
-                those.separated_by(newlines.at_least(1))
-                .allow_leading()
-                .allow_trailing()
-            )
-        )
-        .delimited_by(just(Basic.LeftBrace), just(Basic.RightBrace))
-        .require(ParseError(expected="'}'", following=label))
+    return newlines.ignore_then(
+        these.separated_by(newlines.at_least(1))
+        .allow_leading()
+        .allow_trailing()
+        .then(those.separated_by(newlines.at_least(1)).allow_leading().allow_trailing())
+    ).delimited_by(
+        just(Basic.LeftBrace),
+        just(Basic.RightBrace).require(ParseError(expected="'}'", following=label)),
     )
 
 
@@ -94,8 +89,11 @@ initializer = just(Basic.Equal).ignore_then(
 
 const_decl = (
     just(Keyword.Const)
-    .ignore_then(field)
-    .then(initializer)
+    .ignore_then(
+        field.then(initializer).require(
+            ParseError(expected="const declaration", following="'const' keyword")
+        )
+    )
     .map(
         lambda items: ast.ConstDeclaration(
             name=items[0].name,
@@ -108,14 +106,17 @@ const_decl = (
 let_decl = (
     just(Keyword.Let)
     .ignore_then(just(Keyword.Mut).boolean())
-    .then(field)
-    .then(initializer)
+    .then(
+        field.then(initializer).require(
+            ParseError(expected="variable declaration", following="'let' keyword")
+        )
+    )
     .map(
         lambda items: ast.VarDeclaration(
-            is_mut=items[0][0],
-            name=items[0][1].name,
-            type=Maybe.Just(items[0][1].type),
-            initializer=items[1],
+            is_mut=items[0],
+            name=items[1][0].name,
+            type=Maybe.Just(items[1][0].type),
+            initializer=items[1][1],
         )
     )
 )
@@ -139,14 +140,20 @@ param_spec = (
     )
 )
 
+param_list = (
+    newlines.ignore_then(param_spec)
+    .separated_by(just(Basic.Comma))
+    .allow_trailing()
+    .then_ignore(newlines)
+    .delimited_by(just(Basic.LeftParenthesis), just(Basic.RightParenthesis))
+)
+
 func_sig = (
     named_decl(Keyword.Def)
     .then(
-        newlines.ignore_then(param_spec)
-        .separated_by(just(Basic.Comma))
-        .allow_trailing()
-        .then_ignore(newlines)
-        .delimited_by(just(Basic.LeftParenthesis), just(Basic.RightParenthesis))
+        param_list.require(
+            ParseError("parameter specification list", "'def' keyword with identifier")
+        )
     )
     .then(
         just(Basic.RightArrow)
@@ -288,6 +295,7 @@ when_stmt = (
 decl = (
     enum_decl | struct_decl | const_decl | let_decl | func_decl | type_def | trait_decl
 )
+
 
 decls = lines(decl)
 

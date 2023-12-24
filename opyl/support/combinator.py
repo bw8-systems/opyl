@@ -53,7 +53,7 @@ class ParseResult:
         def unwrap(self) -> t.NoReturn:
             assert (
                 False
-            ), "Unwrapping failed: ParseResult.Match is not ParseResult.Match"
+            ), "Unwrapping failed: ParseResult.Error is not ParseResult.Match"
 
         def unwrap_err(self) -> tuple[Kind, Span]:
             return self.value, self.span

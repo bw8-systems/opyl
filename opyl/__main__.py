@@ -5,6 +5,7 @@ from opyl.compile import lex
 from opyl.compile import parse
 from opyl.compile.error import format_error
 from opyl.support.combinator import PR
+from opyl.support.stream import Source
 
 
 def main():
@@ -13,9 +14,10 @@ def main():
     args = argparser.parse_args()
 
     with open(args.source_file) as f:
-        source = f.read()
+        text = f.read()
 
-    stream = lex.tokenize(source).unwrap()[0]
+    source = Source(text, args.source_file)
+    stream = lex.tokenize(source.text).unwrap()[0]
 
     match parse.parse(stream):
         case PR.Match(item):
