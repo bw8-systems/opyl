@@ -1,0 +1,11 @@
+name: Pytest Unit Tests
+on: [push]
+jobs:
+    Lex-Tests:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Clone Opyl
+              uses: actions/checkout@v4
+            - run: pip install poetry
+            - run: poetry install
+            - run: poetry run pytest .
