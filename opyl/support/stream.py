@@ -10,11 +10,18 @@ class Source:
     text: str
     file: str
 
+    def line(self, index: int) -> str:
+        lines = self.text.splitlines()
+        return lines[index]
+
 
 @dataclass
 class Stream[ItemType]:
     spans: list[Spanned[ItemType]]
     position: int = 0
+
+    def __iter__(self) -> t.Generator[Spanned[ItemType], None, None]:
+        yield from self.spans
 
     @staticmethod
     def from_source(source: str) -> "Stream[str]":

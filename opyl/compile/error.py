@@ -5,6 +5,7 @@ from copy import copy
 
 from opyl.support.span import Span
 from opyl.support.stream import Source
+from opyl.console.color import colors
 
 
 @dataclass
@@ -54,10 +55,23 @@ class ParseError:
     following: str
 
     def __str__(self) -> str:
-        return f"Error: Expected {self.expected} following {self.following}"
+        return f"{colors.bold}error: expected '{self.expected}' following {self.following}{colors.reset}"
 
 
 def format_error(error: ParseError, span: Span, source: Source):
     start, _ = to_location(span, source.text)
 
-    return f"{source.file}:{start.line + 1}:{start.column}: {error}"
+    message = f"{colors.bold}{source.file}:{start.line+1}:{start.column}: {colors.red}error:{colors.reset}{colors.bold} expected '{error.expected}' following {error.following}{colors.reset}"
+    message += f"\n    {source.line(start.line)}"
+    message += (
+        "\n    "
+        + (start.column - 1) * " "
+        + f"{colors.bold}{colors.green}^{colors.reset}"
+    )
+    message += (
+        "\n    "
+        + (start.column - 1) * " "
+        + f"{colors.bold}{colors.orange}{error.expected}{colors.reset}"
+    )
+
+    return message

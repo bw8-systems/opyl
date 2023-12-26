@@ -7,7 +7,7 @@ struct Arguments {
 }
 
 def main(args: Arguments) -> ExitCode {
-    let mut foo: Foo = 5
+    let mut foo: Foo =
 
     if args.len() == 0 {
         return ExitCode::Failure
@@ -16,7 +16,6 @@ def main(args: Arguments) -> ExitCode {
     when value {
         is Match {}
         is NoMatch {}
-        is Error {}
-        else {}
+        is Type {}
     }
 }

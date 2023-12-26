@@ -35,7 +35,7 @@ def block[
     return newlines.ignore_then(
         lines(these).delimited_by(
             just(Basic.LeftBrace),
-            just(Basic.RightBrace),
+            just(Basic.RightBrace).require(ParseError(expected="}", following=label)),
         )
     )
 
@@ -74,6 +74,14 @@ def named_decl(keyword: Keyword) -> Parser[Token, Identifier, ParseError]:
     )
 
 
+def kw_expr(keyword: Keyword) -> Parser[Token, ast.Expression, ParseError]:
+    return just(keyword).ignore_then(
+        expr.require(
+            ParseError(expected="expression", following=f"'{keyword.value}' keyword")
+        )
+    )
+
+
 type = ident
 
 
@@ -83,8 +91,10 @@ field = ident.then(
     )
 ).map(lambda items: ast.Field(name=items[0], type=items[1]))
 
-initializer = just(Basic.Equal).ignore_then(
-    expr.require(ParseError(expected="expression", following="'='"))
+initializer = (
+    just(Basic.Equal)
+    .require(ParseError("=", "variable declaration"))
+    .ignore_then(expr.require(ParseError(expected="expression", following="'='")))
 )
 
 const_decl = (
@@ -216,16 +226,16 @@ enum_decl = (
 )
 
 type_def = (
-    named_decl(Keyword.Type)
-    .then_ignore(just(Basic.Equal))
-    .then(type.separated_by(just(Basic.Pipe)).at_least(1))
+    named_decl(Keyword.Type).then(
+        just(Basic.Equal)
+        .require(ParseError(expected="=", following="'type' with identifier"))
+        .ignore_then(type.separated_by(just(Basic.Pipe)).at_least(1))
+        .require(ParseError(expected="type alias", following="'type' keyword"))
+    )
 ).map(lambda items: ast.TypeDefinition(*items))
 
 trait_decl = (
-    just(Keyword.Trait)
-    .ignore_then(
-        ident.require(ParseError(expected="identifier", following="'trait' keyword"))
-    )
+    named_decl(Keyword.Trait)
     .then(block(func_sig, "trait definition"))
     .map(lambda items: ast.TraitDeclaration(*items))
 )
@@ -273,24 +283,16 @@ for_loop = (
 is_arm = (
     just(Keyword.Is)
     .ignore_then(type.require(ParseError(expected="type", following="'is' keyword")))
-    .then(block(stmt))
+    .then(block(stmt, "is arm"))
     .map(lambda items: ast.IsClause(*items))
 )
 
-# TODO: Multiple else clauses should be an error. Its okay if its not a syntax errors
-# however the way that this parser is constructed causes information about whether there
-# were multiple else clauses is lost. I just wanted to reuse the block_pair parser
-# because needing to chain newlines and allow_trailing etc is verbose and muddying.
+# TODO: Parse `else` blocks in when statements.
 when_stmt = (
-    just(Keyword.When)
-    .ignore_then(expr)
-    .then(just(Keyword.As).ignore_then(ident).or_not())
-    .then(
-        lines(is_arm)
-        .then(else_block.or_else([]))
-        .delimited_by(just(Basic.LeftBrace), just(Basic.RightBrace))
+    kw_expr(Keyword.When).then(
+        just(Keyword.As).ignore_then(ident).or_not().then(block(is_arm))
     )
-).map(lambda item: ast.WhenStatement(item[0][0], item[0][1], item[1][0], item[1][1]))
+).map(lambda item: ast.WhenStatement(item[0], item[1][0], item[1][1], []))
 
 decl = (
     enum_decl | struct_decl | const_decl | let_decl | func_decl | type_def | trait_decl
@@ -302,5 +304,15 @@ decls = lines(decl)
 
 def parse(
     stream: Stream[Token],
-) -> ParseResult.Type[Token, list[ast.Declaration], ParseError]:
+):
+    """
+    In order to simplify error recovery while also maintaining error reporting ergononomics, the general approach to error
+    recovery being taken here is, "don't," where the twist is that rather than parsing the entire token stream in one go,
+    it'll instead be parsed incrementally so as to localize the spoil effect that syntax errors have on the entire output.
+
+    In order to split the stream, the hueristic is to parse at top-level opening curly braces. With a single split like this,
+    it means that one error may be reported per top-level declaration. This isn't an ideal solution since something such as a
+    trait or struct declaration could have a quite large body, but it's an initial stab at a proof of concept.
+    """
+    ...
     return decls.parse(stream)

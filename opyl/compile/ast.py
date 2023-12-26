@@ -20,16 +20,6 @@ type Statement = (
 type Type = Identifier
 
 
-# TODO: This is a stop-gap until more complex types are added to the
-# language, such as generics and const-generics. To avoid syntax
-# ambiguity mitigation features in the syntax, types will be parsed
-# by the Pratt parser as expressions.
-@dataclass
-class ArrayType:
-    base: Type
-    size: int
-
-
 @dataclass
 class Field:
     name: Identifier
@@ -45,23 +35,10 @@ class ParamSpec:
 
 
 @dataclass
-class GenericParamSpec:
-    field: Field
-
-
-@dataclass
 class FunctionSignature:
     name: Identifier
     params: list[ParamSpec]
     return_type: Maybe.Type[Identifier]
-
-
-@dataclass
-class MethodSignature:
-    name: Identifier
-    generic_params: list[GenericParamSpec]
-    params: list[ParamSpec]
-    return_type: Maybe.Type[str]
 
 
 type Declaration = (
@@ -75,17 +52,12 @@ type Declaration = (
 )
 
 
+# TODO: This would be more ergonomic if it didn't wrap FunctionSignature
+# and instead extracted the values to the top level.
 @dataclass
 class FunctionDeclaration:
     name: Identifier
     signature: FunctionSignature
-    body: list[Statement]
-
-
-@dataclass
-class MethodDeclaration:
-    name: Identifier
-    signature: MethodSignature
     body: list[Statement]
 
 
@@ -113,12 +85,7 @@ class EnumDeclaration:
 @dataclass
 class StructDeclaration:
     name: Identifier
-    # generic_params: GenericParamSpec
-    # trait_impls: list[
-    #     str
-    # ]  # TODO: Hm, the implemented traits could be generic, so just a string isn't sufficient.
     fields: list[Field]
-    # methods: list[MethodDeclaration]
     functions: list[FunctionDeclaration]
 
 
@@ -131,9 +98,6 @@ class TypeDefinition:
 @dataclass
 class TraitDeclaration:
     name: Identifier
-    # bases: list[Identifier]
-    # generic_params: list[GenericParamSpec]
-    # methods: list[MethodSignature]
     functions: list[FunctionSignature]
 
 
@@ -187,8 +151,3 @@ class WhenStatement:
 @dataclass
 class ReturnStatement:
     expression: Maybe.Type[Expression]
-
-
-@dataclass
-class ModuleDeclaration:
-    declarations: list[Declaration]
