@@ -2,11 +2,22 @@ import typing as t
 from dataclasses import dataclass
 
 from opyl.support.union import Maybe
-from opyl.support.span import Spanned, Span, TextPosition
+from opyl.support.span import Spanned, Span
+
+
+@dataclass
+class Source:
+    text: str
+    file: str
+
+    def line(self, index: int) -> str:
+        lines = self.text.splitlines()
+        return lines[index]
 
 
 @dataclass
 class Stream[ItemType]:
+    file_handle: str | None
     spans: list[Spanned[ItemType]]
     position: int = 0
 
@@ -15,26 +26,18 @@ class Stream[ItemType]:
 
     @staticmethod
     def from_source(source: str, file_handle: str | None = None) -> "Stream[str]":
-        spans = list[Spanned[str]]()
-        line, column = 1, 1
-        for idx, char in enumerate(source):
-            start = TextPosition(idx, line, column)
-
-            column += 1
-            if char == "\n":
-                line += 1
-                column = 1
-
-            end = TextPosition(idx, line, column)
-
-            spans.append(Spanned(char, Span(file_handle, start, end)))
-
-        return Stream(spans)
+        return Stream(
+            file_handle=file_handle,
+            spans=[
+                Spanned(item, Span(idx, idx + 1)) for idx, item in enumerate(source)
+            ],
+        )
 
     def map[
         NewItemType
     ](self, mapper: t.Callable[[ItemType], NewItemType]) -> "Stream[NewItemType]":
         return Stream(
+            file_handle=self.file_handle,
             spans=[
                 Spanned(mapper(spanned.item), spanned.span) for spanned in self.spans
             ],
@@ -53,6 +56,7 @@ class Stream[ItemType]:
 
     def advance(self, by: int = 1) -> t.Self:
         return self.__class__(
+            file_handle=self.file_handle,
             spans=self.spans,
             position=min(self.position + by, len(self.spans)),
         )

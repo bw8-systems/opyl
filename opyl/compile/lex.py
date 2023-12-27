@@ -165,7 +165,7 @@ def tokenize(
 ) -> ParseResult.Type[str, Stream[Token], LexError]:
     match tokenizer.parse(Stream.from_source(source, file_handle)):
         case PR.Match(toks, rem):
-            return PR.Match(Stream(toks), rem)
+            return PR.Match(Stream(file_handle, toks), rem)
         case PR.NoMatch:
             return PR.NoMatch
         case PR.Error() as error:

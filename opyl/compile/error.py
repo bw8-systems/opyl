@@ -1,54 +1,44 @@
 import typing as t
 import enum
-import textwrap
 from dataclasses import dataclass
+from copy import copy
 
-from opyl.compile.token import Token
-from opyl.support.stream import Stream
+from opyl.support.span import Span
+from opyl.support.stream import Source
 from opyl.console.color import colors
 
 
-REPORT = textwrap.dedent(
-    f"""
-    {colors.white}{colors.bold}{{fname}}:{{ln_no}}:{{col_no}}: {colors.red}error:{colors.white} {{message}}{colors.reset}
-        {{line}}
-    """
-)[1:]
-
-
 @dataclass
-class Message:
-    filename: str | None
-    line: int
-    column: int
-    message: str
-    excerpt: str
+class TextPosition:
+    absolute: int = 0
+    line: int = 0
+    column: int = 0
 
-    annotation: tuple[int, str] | None = None
+    def advance(self, char: str) -> t.Self:
+        other = copy(self)
+        other.absolute += 1
+        other.column += 1
 
-    def __str__(self) -> str:
-        base = REPORT.format(
-            fname=self.filename,
-            ln_no=self.line,
-            col_no=self.column,
-            message=self.message,
-            line=self.excerpt,
-        )
+        if char == "\n":
+            other.line += 1
+            other.column = 0
 
-        if self.annotation is None:
-            extension = ""
-        else:
-            lines = (
-                " " * self.annotation[0] + "^",
-                " " * self.annotation[0] + self.annotation[1],
-            )
-            extension = f"    {lines[0]}\n    {lines[1]}"
+        return other
 
-        return base + extension
 
-    def add_pointer(self, offset: int, expected: str) -> t.Self:
-        self.annotation = (offset, expected)
-        return self
+def to_location(span: Span, source: str) -> tuple[TextPosition, TextPosition]:
+    # Given a start and end index into the source file, return two
+    # text positions that give a human readable representation of the location.
+    start = TextPosition()
+
+    for char in source[: span.start]:
+        start = start.advance(char)
+
+    end = TextPosition()
+    for char in source[: span.end]:
+        end = end.advance(char)
+
+    return start, end
 
 
 class LexError(enum.Enum):
@@ -65,16 +55,23 @@ class ParseError:
     following: str
 
     def __str__(self) -> str:
-        return f"expected '{self.expected}' following {self.following}"
+        return f"{colors.bold}error: expected '{self.expected}' following {self.following}{colors.reset}"
 
 
-def format_error(error: ParseError, remaining: Stream[Token]):
-    message = Message(
-        filename=remaining.spans[remaining.position].span.file_handle,
-        line=remaining.spans[remaining.position].span.start.line,
-        column=remaining.spans[remaining.position].span.start.column,
-        message=str(error),
-        excerpt="",
+def format_error(error: ParseError, span: Span, source: Source):
+    start, _ = to_location(span, source.text)
+
+    message = f"{colors.bold}{source.file}:{start.line+1}:{start.column}: {colors.red}error:{colors.reset}{colors.bold} expected '{error.expected}' following {error.following}{colors.reset}"
+    message += f"\n    {source.line(start.line)}"
+    message += (
+        "\n    "
+        + (start.column - 1) * " "
+        + f"{colors.bold}{colors.green}^{colors.reset}"
+    )
+    message += (
+        "\n    "
+        + (start.column - 1) * " "
+        + f"{colors.bold}{colors.orange}{error.expected}{colors.reset}"
     )
 
     return message

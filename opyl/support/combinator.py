@@ -7,10 +7,11 @@ from enum import Enum
 from opyl.support.stream import Stream
 from opyl.support.union import Maybe
 from opyl.support import span
+from opyl.support.span import Span
 
 
 class ParseResult:
-    type Type[In, Out, Err] = Match[In, Out] | t.Literal[Kind.NoMatch] | Error[In, Err]
+    type Type[In, Out, Err] = Match[In, Out] | t.Literal[Kind.NoMatch] | Error[Err]
 
     class Kind(Enum):
         Match = 0
@@ -45,17 +46,17 @@ class ParseResult:
     NoMatch: t.Final[t.Literal[Kind.NoMatch]] = Kind.NoMatch
 
     @dataclass
-    class Error[In, Err]:
-        value: Err
-        remaining: Stream[In]
+    class Error[Kind]:
+        value: Kind
+        span: Span
 
         def unwrap(self) -> t.NoReturn:
             assert (
                 False
             ), "Unwrapping failed: ParseResult.Error is not ParseResult.Match"
 
-        def unwrap_err(self) -> tuple[Err, Stream[In]]:
-            return self.value, self.remaining
+        def unwrap_err(self) -> tuple[Kind, Span]:
+            return self.value, self.span
 
 
 PR = ParseResult
@@ -171,7 +172,11 @@ class Require[In, Out, Err](Parser[In, Out, Err]):
             case PR.Match(item, pos):
                 return PR.Match(item, pos)
             case PR.NoMatch:
-                return PR.Error(self.error, input)
+                match input.peek():
+                    case Maybe.Just(spanned):
+                        return PR.Error(self.error, spanned.span)
+                    case Maybe.Nothing:
+                        return PR.Error(self.error, input.end())
             case PR.Error() as errs:
                 return errs
 
@@ -185,19 +190,12 @@ class Spanned[In, Out, Err](Parser[In, span.Spanned[Out], Err]):
         match self.parser.parse(input):
             case PR.Match(item, pos):
                 return PR.Match(
-                    span.Spanned(
-                        item,
-                        input.spans[input.position].span  # TODO: Clean this up.
-                        + pos.spans[input.position].span,
-                    ),
-                    pos,
+                    span.Spanned(item, span.Span(input.position, pos.position)), pos
                 )
             case PR.NoMatch:
                 return PR.NoMatch
             case PR.Error() as err:
                 return err
-
-        raise NotImplementedError()
 
 
 @dataclass

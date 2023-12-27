@@ -3,8 +3,9 @@ from pprint import pprint
 
 from opyl.compile import lex
 from opyl.compile import parse
-from opyl.support.combinator import PR
 from opyl.compile.error import format_error
+from opyl.support.combinator import PR
+from opyl.support.stream import Source
 
 
 def main():
@@ -15,15 +16,16 @@ def main():
     with open(args.source_file) as f:
         text = f.read()
 
-    stream = lex.tokenize(text, args.source_file).unwrap()[0]  # TODO: Don't unwrap
+    source = Source(text, args.source_file)
+    stream = lex.tokenize(source.text).unwrap()[0]
 
     match parse.parse(stream):
         case PR.Match(item):
             pprint(item)
         case PR.NoMatch:
             ...
-        case PR.Error(err, pos):
-            fmt = format_error(err, pos)
+        case PR.Error(err, span):
+            fmt = format_error(err, span, source)
             print(fmt)
 
 
