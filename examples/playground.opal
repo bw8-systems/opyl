@@ -7,7 +7,7 @@ struct Arguments {
 }
 
 def main(args: Arguments) -> ExitCode {
-    let mut foo: Foo =
+    let mut foo: Foo = 
 
     if args.len() == 0 {
         return ExitCode::Failure

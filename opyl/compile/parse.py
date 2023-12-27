@@ -304,7 +304,7 @@ decls = lines(decl)
 
 def parse(
     stream: Stream[Token],
-):
+) -> ParseResult.Type[Token, list[ast.Declaration], ParseError]:
     """
     In order to simplify error recovery while also maintaining error reporting ergononomics, the general approach to error
     recovery being taken here is, "don't," where the twist is that rather than parsing the entire token stream in one go,
@@ -314,5 +314,4 @@ def parse(
     it means that one error may be reported per top-level declaration. This isn't an ideal solution since something such as a
     trait or struct declaration could have a quite large body, but it's an initial stab at a proof of concept.
     """
-    ...
     return decls.parse(stream)

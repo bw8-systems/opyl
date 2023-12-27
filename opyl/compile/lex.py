@@ -25,7 +25,6 @@ from opyl.support.combinator import (
 )
 from opyl.support.stream import Stream
 
-
 just = Just[str, LexError]
 filt = Filter[str, LexError]
 one_of = OneOf[str, LexError]
@@ -161,8 +160,10 @@ token = integer | keyword | identifier | basic | string | character
 tokenizer = strip.ignore_then(token.spanned()).repeated()
 
 
-def tokenize(source: str) -> ParseResult.Type[str, Stream[Token], LexError]:
-    match tokenizer.parse(Stream.from_source(source)):
+def tokenize(
+    source: str, file_handle: str | None = None
+) -> ParseResult.Type[str, Stream[Token], LexError]:
+    match tokenizer.parse(Stream.from_source(source, file_handle)):
         case PR.Match(toks, rem):
             return PR.Match(Stream(toks), rem)
         case PR.NoMatch:

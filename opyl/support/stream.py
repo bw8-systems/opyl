@@ -2,17 +2,7 @@ import typing as t
 from dataclasses import dataclass
 
 from opyl.support.union import Maybe
-from opyl.support.span import Spanned, Span
-
-
-@dataclass
-class Source:
-    text: str
-    file: str
-
-    def line(self, index: int) -> str:
-        lines = self.text.splitlines()
-        return lines[index]
+from opyl.support.span import Spanned, Span, TextPosition
 
 
 @dataclass
@@ -24,16 +14,30 @@ class Stream[ItemType]:
         yield from self.spans
 
     @staticmethod
-    def from_source(source: str) -> "Stream[str]":
-        return Stream(
-            [Spanned(char, Span(idx, idx + 1)) for idx, char in enumerate(source)],
-        )
+    def from_source(source: str, file_handle: str | None = None) -> "Stream[str]":
+        spans = list[Spanned[str]]()
+        line, column = 1, 1
+        for idx, char in enumerate(source):
+            start = TextPosition(idx, line, column)
+
+            column += 1
+            if char == "\n":
+                line += 1
+                column = 1
+
+            end = TextPosition(idx, line, column)
+
+            spans.append(Spanned(char, Span(file_handle, start, end)))
+
+        return Stream(spans)
 
     def map[
         NewItemType
     ](self, mapper: t.Callable[[ItemType], NewItemType]) -> "Stream[NewItemType]":
         return Stream(
-            [Spanned(mapper(spanned.item), spanned.span) for spanned in self.spans],
+            spans=[
+                Spanned(mapper(spanned.item), spanned.span) for spanned in self.spans
+            ],
         )
 
     def remaining(self) -> list[Spanned[ItemType]]:

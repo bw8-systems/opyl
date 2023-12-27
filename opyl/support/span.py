@@ -3,16 +3,37 @@ from dataclasses import dataclass
 
 
 @dataclass
+class TextPosition:
+    absolute: int = 0
+    line: int = 0
+    column: int = 0
+
+
+@dataclass
+class Bounds:
+    start: TextPosition
+    end: TextPosition
+
+
+@dataclass
 class Span:
-    start: int
-    end: int
+    file_handle: str | None
+    start: TextPosition
+    end: TextPosition
+
+    def __add__(self, other: t.Any) -> t.Self:
+        if not isinstance(other, Span):
+            return NotImplemented
+
+        assert other.file_handle == self.file_handle
+        return self.__class__(
+            file_handle=self.file_handle,
+            start=self.start,
+            end=other.end,
+        )
 
 
 @dataclass
 class Spanned[Item]:
     item: Item
     span: Span
-
-    @classmethod
-    def from_pair(cls, pair: tuple[Item, Span]) -> t.Self:
-        return cls(pair[0], pair[1])

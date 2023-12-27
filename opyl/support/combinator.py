@@ -7,11 +7,10 @@ from enum import Enum
 from opyl.support.stream import Stream
 from opyl.support.union import Maybe
 from opyl.support import span
-from opyl.support.span import Span
 
 
 class ParseResult:
-    type Type[In, Out, Err] = Match[In, Out] | t.Literal[Kind.NoMatch] | Error[Err]
+    type Type[In, Out, Err] = Match[In, Out] | t.Literal[Kind.NoMatch] | Error[In, Err]
 
     class Kind(Enum):
         Match = 0
@@ -46,17 +45,17 @@ class ParseResult:
     NoMatch: t.Final[t.Literal[Kind.NoMatch]] = Kind.NoMatch
 
     @dataclass
-    class Error[Kind]:
-        value: Kind
-        span: Span
+    class Error[In, Err]:
+        value: Err
+        remaining: Stream[In]
 
         def unwrap(self) -> t.NoReturn:
             assert (
                 False
             ), "Unwrapping failed: ParseResult.Error is not ParseResult.Match"
 
-        def unwrap_err(self) -> tuple[Kind, Span]:
-            return self.value, self.span
+        def unwrap_err(self) -> tuple[Err, Stream[In]]:
+            return self.value, self.remaining
 
 
 PR = ParseResult
@@ -131,20 +130,12 @@ class Parser[In, Out, Err](ABC):
         return Require(self, kind)
 
     @t.final
-    def map[U](self, func: t.Callable[[Out], U]) -> "Map[In, Out, U, Err]":
-        return Map(self, func)
-
-    @t.final
     def spanned(self) -> "Spanned[In, Out, Err]":
         return Spanned(self)
 
     @t.final
-    def map_with_span[
-        Mapped
-    ](
-        self, mapper: t.Callable[[Out, Span], Mapped]
-    ) -> "MapWithSpan[In, Out, Mapped, Err]":
-        return MapWithSpan(self, mapper)
+    def map[U](self, func: t.Callable[[Out], U]) -> "Map[In, Out, U, Err]":
+        return Map(self, func)
 
     @t.final
     def and_check(self, pred: t.Callable[[Out], bool]) -> "AndCheck[In, Out, Err]":
@@ -180,13 +171,33 @@ class Require[In, Out, Err](Parser[In, Out, Err]):
             case PR.Match(item, pos):
                 return PR.Match(item, pos)
             case PR.NoMatch:
-                match input.peek():
-                    case Maybe.Just(spanned):
-                        return PR.Error(self.error, spanned.span)
-                    case Maybe.Nothing:
-                        return PR.Error(self.error, input.end())
+                return PR.Error(self.error, input)
             case PR.Error() as errs:
                 return errs
+
+
+@dataclass
+class Spanned[In, Out, Err](Parser[In, span.Spanned[Out], Err]):
+    parser: Parser[In, Out, Err]
+
+    @t.override
+    def parse(self, input: Stream[In]) -> PR.Type[In, span.Spanned[Out], Err]:
+        match self.parser.parse(input):
+            case PR.Match(item, pos):
+                return PR.Match(
+                    span.Spanned(
+                        item,
+                        input.spans[input.position].span  # TODO: Clean this up.
+                        + pos.spans[input.position].span,
+                    ),
+                    pos,
+                )
+            case PR.NoMatch:
+                return PR.NoMatch
+            case PR.Error() as err:
+                return err
+
+        raise NotImplementedError()
 
 
 @dataclass
@@ -460,24 +471,6 @@ class OrElse[In, Out, Err](Parser[In, Out, Err]):
                 return errors
 
 
-# TODO: Are Spanned and MapWithSpan both needed?
-@dataclass
-class Spanned[In, Out, Err](Parser[In, span.Spanned[Out], Err]):
-    parser: Parser[In, Out, Err]
-
-    @t.override
-    def parse(self, input: Stream[In]) -> ParseResult.Type[In, span.Spanned[Out], Err]:
-        match self.parser.parse(input):
-            case PR.Match(item, pos):
-                return PR.Match(
-                    span.Spanned(item, Span(input.position, pos.position)), pos
-                )
-            case PR.NoMatch:
-                return PR.NoMatch
-            case PR.Error() as errors:
-                return errors
-
-
 @dataclass
 class Map[In, Out, Mapped, Err](Parser[In, Mapped, Err]):
     parser: Parser[In, Out, Err]
@@ -488,23 +481,6 @@ class Map[In, Out, Mapped, Err](Parser[In, Mapped, Err]):
         match self.parser.parse(input):
             case PR.Match(item, pos):
                 return PR.Match(self.mapper(item), pos)
-            case PR.NoMatch:
-                return PR.NoMatch
-            case PR.Error() as errors:
-                return errors
-
-
-@dataclass
-class MapWithSpan[In, Out, Mapped, Err](Parser[In, Mapped, Err]):
-    parser: Parser[In, Out, Err]
-    mapper: t.Callable[[Out, Span], Mapped]
-
-    @t.override
-    def parse(self, input: Stream[In]) -> ParseResult.Type[In, Mapped, Err]:
-        match self.parser.parse(input):
-            case PR.Match(item, pos):
-                item_span = Span(start=input.position, end=pos.position)
-                return PR.Match(self.mapper(item, item_span), pos)
             case PR.NoMatch:
                 return PR.NoMatch
             case PR.Error() as errors:
