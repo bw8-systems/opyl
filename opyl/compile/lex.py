@@ -179,13 +179,12 @@ def tokenize_with_comments(
     span_base = 0
 
     for line in source.splitlines():
-        match tokenizer.parse(Stream.from_source(line, file_handle, span_base)):
+        match tokenizer.parse(Stream.from_source(f"{line}\n", file_handle, span_base)):
             case PR.Match(toks, rem):
                 tokens.extend(toks)
-
                 # TODO: Don't assert.
-                assert rem.position == len(
-                    line
+                assert rem.position == (
+                    len(line) + 1
                 ), "Top level `require` should prevent stream from being incompletely consumed."
             case PR.NoMatch:
                 # TODO: Don't assert.

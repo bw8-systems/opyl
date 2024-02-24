@@ -1,6 +1,7 @@
 from opyl.compile import compile
 from opyl.support.union import Result
 from opyl.io import error
+
 from opyl.driver.command_line import CommandLineArguments
 from opyl.io.file import File
 

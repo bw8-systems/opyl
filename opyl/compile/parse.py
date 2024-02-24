@@ -250,7 +250,7 @@ if_stmt = (
     .ignore_then(
         expr.require(ParseError(expected="expression", following="'if' keyword"))
     )
-    .then(block(stmt))
+    .then(block(stmt).require(ParseError(expected="'{'", following="expression")))
     .then(else_block.or_else([]))
     .map(
         lambda items: ast.IfStatement(
@@ -322,6 +322,7 @@ def parse(
     stream: Stream[Token],
 ) -> ParseResult.Type[Token, list[ast.Declaration], ParseError]:
     """
+    TODO: Actually do this vvvvvvvvvv
     In order to simplify error recovery while also maintaining error reporting ergononomics, the general approach to error
     recovery being taken here is, "don't," where the twist is that rather than parsing the entire token stream in one go,
     it'll instead be parsed incrementally so as to localize the spoil effect that syntax errors have on the entire output.
@@ -330,4 +331,49 @@ def parse(
     it means that one error may be reported per top-level declaration. This isn't an ideal solution since something such as a
     trait or struct declaration could have a quite large body, but it's an initial stab at a proof of concept.
     """
+
+    # pairs = list[tuple[int, int]]()
+    # current_start = 0
+    # depth = 0
+    # prev_depth = 0
+    # for idx, spanned in enumerate(stream):
+    #     if not isinstance(spanned.item, Basic):
+    #         continue
+
+    #     match spanned.item:
+    #         case Basic.LeftBrace:
+    #             depth += 1
+    #         case Basic.RightBrace:
+    #             depth -= 1
+    #         case _:
+    #             pass
+
+    #     if (prev_depth != depth) and (depth == 0):
+    #         pairs.append((current_start, idx))
+    #         current_start = idx
+
+    #     prev_depth = depth
+
+    # for pair in pairs:
+    #     if pair[1] == 106:
+    #         spans = stream.spans[pair[0] :]
+    #     else:
+    #         spans = stream.spans[pair[0] : pair[1] + 1]
+    #     substream = Stream(
+    #         file_handle=stream.file_handle,
+    #         spans=spans,
+    #         position=stream.position,
+    #     )
+    #     parsed = decls.parse(substream)
+    #     match parsed:
+    #         case PR.Match(item, _):
+    #             pprint(item)
+    #         case PR.Error(err, span):
+    #             report_parse_error(err, span, Foo)
+    #         case PR.NoMatch:
+    #             print("NO MATCH")
+    # # p`print(stream)
+    # # pprint(len(stre`am.spans))
+    # print(pairs)
+    # exit()
     return decls.parse(stream)

@@ -57,19 +57,14 @@ class ParseError:
     expected: str
     following: str
 
-    def __str__(self) -> str:
-        return f"{colors.bold}error: expected '{self.expected}' following {self.following}{colors.reset}"
 
-
-def format_error(error: ParseError, span: Span, source: Source):
+def report_parse_error(error: ParseError, span: Span, source: Source):
     start, _ = to_location(span, source.text)
 
-    message = f"{colors.bold}{source.file}:{start.line+1}:{start.column}: {colors.red}error:{colors.reset}{colors.bold} expected '{error.expected}' following {error.following}{colors.reset}"
+    message = f"{colors.bold}{source.file}:{start.line+1}:{start.column}: {colors.red}syntax error:{colors.reset}{colors.bold} expected {error.expected} following {error.following}{colors.reset}"
     message += f"\n    {source.line(start.line)}"
     message += (
-        "\n    "
-        + (start.column - 1) * " "
-        + f"{colors.bold}{colors.green}^{colors.reset}"
+        "\n    " + (start.column) * " " + f"{colors.bold}{colors.green}^{colors.reset}"
     )
     message += (
         "\n    "
@@ -77,9 +72,11 @@ def format_error(error: ParseError, span: Span, source: Source):
         + f"{colors.bold}{colors.orange}{error.expected}{colors.reset}"
     )
 
-    return message
+    print(message, file=file.stderr)
 
 
+# TODO: In its current usage, an unexpected character error is really just an illegal character error (I think). Perhaps rename.
+# TODO: Perhaps update unexpected character error to just say "unexpected character on line" and not put a caret (^).
 def report_lex_errors(
     errors: list[ParseResult.Error[LexError]],
     source: Source,
@@ -87,7 +84,7 @@ def report_lex_errors(
 ):
     for error in errors:
         start, _ = to_location(error.span, source.text)
-        message = f"{colors.bold}{source.file}:{start.line+1}:{start.column}: {colors.red}lexical error:{colors.reset}{colors.bold} {error.value.value}{colors.reset}"
+        message = f"{colors.bold}{source.file}:{start.line+1}:{start.column}: {colors.red}token error:{colors.reset}{colors.bold} {error.value.value}{colors.reset}"
         message += f"\n    {source.line(start.line)}"
         message += (
             "\n    "
