@@ -77,10 +77,7 @@ class TokenKind(Enum):
     Comment = auto()
 
 
-class IntegerLiteralBase(Enum):
-    Binary = auto()
-    Decimal = auto()
-    Hexadecimal = auto()
+type IntegerLiteralBase = t.Literal[2] | t.Literal[10] | t.Literal[16]
 
 
 Whitespace: t.Final[t.Literal[TokenKind.Whitespace]] = TokenKind.Whitespace
@@ -104,7 +101,7 @@ class StringLiteral:
 @dataclass
 class IntegerLiteral:
     integer: int
-    base: IntegerLiteralBase = IntegerLiteralBase.Decimal
+    base: IntegerLiteralBase = 10
 
 
 @dataclass

@@ -1,9 +1,9 @@
 import typing as t
 from dataclasses import dataclass
+import os
 
 from opyl.compile.error import LexError
 from opyl.compile.token import (
-    IntegerLiteralBase,
     Token,
     IntegerLiteral,
     Keyword,
@@ -60,17 +60,7 @@ def integer_digits(
 def integer_mapper(
     base: t.Literal[2] | t.Literal[10] | t.Literal[16],
 ) -> t.Callable[[list[str]], IntegerLiteral]:
-    match base:
-        case 2:
-            literal_base = IntegerLiteralBase.Binary
-        case 10:
-            literal_base = IntegerLiteralBase.Decimal
-        case 16:
-            literal_base = IntegerLiteralBase.Hexadecimal
-
-    return lambda chars: IntegerLiteral(
-        int("".join(chars), base=base), base=literal_base
-    )
+    return lambda chars: IntegerLiteral(int("".join(chars), base=base), base=base)
 
 
 bin_integer = (
@@ -180,7 +170,7 @@ tokenizer = (
 )
 
 
-def tokenize(source: str, file_handle: str | None = None) -> LexResult:
+def tokenize(source: str, file_handle: os.PathLike[str] | None = None) -> LexResult:
     tokens = list[Spanned[Token]]()
     errors = list[ParseResult.Error[LexError]]()
     span_base = 0

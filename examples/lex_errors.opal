@@ -1,2 +1,1 @@
-val = 0xk
-foo = "Hello, World!'
+let variable: Type = 5

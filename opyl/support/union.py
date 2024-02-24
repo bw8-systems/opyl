@@ -43,10 +43,8 @@ class Result:
             assert False, "Unwrapping failed. Result.Ok is not Result.Err"
 
         def and_then[
-            U
-        ](
-            self, op: "t.Callable[[T], Result.Type[U, t.Any]]"
-        ) -> "Result.Type[U, t.Any]":
+            U, E
+        ](self, op: "t.Callable[[T], Result.Type[U, E]]") -> "Result.Type[U, E]":
             return op(self.item)
 
         def expect(self, _expectation: str) -> T:
@@ -69,10 +67,8 @@ class Result:
             return self.item
 
         def and_then[
-            U
-        ](
-            self, op: "t.Callable[[t.Any], Result.Type[U, E]]"
-        ) -> "Result.Type[t.Any, E]":
+            T, U
+        ](self, op: "t.Callable[[T], Result.Type[U, E]]") -> "Result.Type[U, E]":
             return self
 
         def expect(self, expectation: str) -> t.NoReturn:

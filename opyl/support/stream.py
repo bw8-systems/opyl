@@ -1,5 +1,6 @@
 import typing as t
 from dataclasses import dataclass
+import os
 
 from opyl.support.union import Maybe
 from opyl.support.span import Spanned, Span
@@ -8,8 +9,9 @@ from opyl.support.span import Spanned, Span
 @dataclass
 class Source:
     text: str
-    file: str
+    file: os.PathLike[str]
 
+    # TODO: Inefficient
     def line(self, index: int) -> str:
         lines = self.text.splitlines()
         return lines[index]
@@ -17,7 +19,7 @@ class Source:
 
 @dataclass
 class Stream[ItemType]:
-    file_handle: str | None
+    file_handle: os.PathLike[str] | None  # TODO: Not a handle
     spans: list[Spanned[ItemType]]
     position: int = 0
 
@@ -26,7 +28,7 @@ class Stream[ItemType]:
 
     @staticmethod
     def from_source(
-        source: str, file_handle: str | None = None, span_base: int = 0
+        source: str, file_handle: os.PathLike[str] | None = None, span_base: int = 0
     ) -> "Stream[str]":
         return Stream(
             file_handle=file_handle,

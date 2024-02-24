@@ -1,25 +1,18 @@
-import argparse
-
 from opyl.compile import compile
+from opyl.support.union import Result
 from opyl.io import error
+from opyl.driver.command_line import CommandLineArguments
 from opyl.io.file import File
 
 
 def main():
-    argparser = argparse.ArgumentParser()
-    argparser.add_argument("source_file")
-    args = argparser.parse_args()
+    args = CommandLineArguments.parse_args()
 
-    read_result = File.open(args.source_file).and_then(File.read)
-
-    if read_result.is_err():
-        error.fatal(
-            f"Failed to open source file '{args.source_file}'.",
-        )
-
-    text = read_result.unwrap()
-
-    compile.compile(args.source_file, text)
+    match File.open(args.source_file).and_then(File.read):
+        case Result.Err(err):
+            error.fatal_io_error(err)
+        case Result.Ok(text):
+            compile.compile(args.source_file, text)
 
 
 if __name__ == "__main__":

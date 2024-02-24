@@ -9,7 +9,7 @@ from opyl.compile.lex import (
     character,
     basic,
 )
-from opyl.compile.token import Basic, IntegerLiteralBase
+from opyl.compile.token import Basic
 from opyl.compile.error import LexError
 from .utils import parse_test_err, lex_test
 
@@ -62,13 +62,13 @@ class TestIntegerLiteral:
         )  # TODO: Should be illegal. We'll fix it in post.
 
     def test_binary_literal(self):
-        lex_test(integer, "0b01", IntegerLiteral(0b01, IntegerLiteralBase.Binary))
+        lex_test(integer, "0b01", IntegerLiteral(0b01, 2))
 
     def test_hex_literal(self):
         lex_test(
             integer,
             "0xdeadBEEF",
-            IntegerLiteral(0xDEADBEEF, IntegerLiteralBase.Hexadecimal),
+            IntegerLiteral(0xDEADBEEF, 16),
         )
 
     def test_underscore_in_literal(self):
@@ -78,14 +78,10 @@ class TestIntegerLiteral:
         lex_test(integer, "_45", None)
 
     def test_underscore_in_hex_literal(self):
-        lex_test(
-            integer, "0x_4_5", IntegerLiteral(0x45, IntegerLiteralBase.Hexadecimal)
-        )
+        lex_test(integer, "0x_4_5", IntegerLiteral(0x45, 16))
 
     def test_hex_literal_with_followers(self):
-        lex_test(
-            integer, "0x3 foo 'a'", IntegerLiteral(0x3, IntegerLiteralBase.Hexadecimal)
-        )
+        lex_test(integer, "0x3 foo 'a'", IntegerLiteral(0x3, 16))
 
 
 class TestIdentifier:

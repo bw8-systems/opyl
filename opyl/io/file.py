@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 import enum
 import os
 import typing as t
@@ -14,11 +15,20 @@ stdout = sys.stdout
 stderr = sys.stderr
 
 
-class IOError(enum.Enum):
-    FileNotFound = enum.auto()
+@dataclass
+class IOError:
+    class Kind(enum.Enum):
+        FileNotFound = "input file not found"
+
+    path: os.PathLike[str]
+    value: Kind
 
 
 type IOResult[T] = Result.Type[T, IOError]
+
+
+# class IOResult:
+#     type Type[T] = Result.Type[T, IOError]
 
 
 class IOMode(enum.Enum):
@@ -62,7 +72,7 @@ class File[Mode: IOMode]:
         try:
             return Result.Ok(File(path, IOMode.Read))
         except FileNotFoundError:
-            return Result.Err(IOError.FileNotFound)
+            return Result.Err(IOError(path=path, value=IOError.Kind.FileNotFound))
 
     @staticmethod
     def create(path: os.PathLike[str]) -> "IOResult[WriteFile]":
