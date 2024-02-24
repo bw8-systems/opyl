@@ -5,7 +5,7 @@ from opyl.compile.token import Token, Keyword, Basic, Identifier
 from opyl.compile.error import ParseError
 from opyl.compile.pratt import expr
 from opyl.support.stream import Stream
-from opyl.support.combinator import Parser, ParseResult
+from opyl.support.combinator import Parser, ParseResult, Nothing
 from opyl.support.union import Maybe
 from opyl.support.atoms import just, ident, newlines
 
@@ -53,7 +53,9 @@ def block_pair[
         .allow_trailing()
         .then(those.separated_by(newlines.at_least(1)).allow_leading().allow_trailing())
     ).delimited_by(
-        just(Basic.LeftBrace),
+        just(Basic.LeftBrace).require(
+            ParseError(expected="{", following="start of block")
+        ),  # TODO: Hacky hardcoded "following" text...
         just(Basic.RightBrace).require(ParseError(expected="'}'", following=label)),
     )
 
@@ -186,8 +188,8 @@ break_stmt = just(Keyword.Break).to(ast.BreakStatement())
 continue_stmt = just(Keyword.Continue).to(ast.ContinueStatement())
 return_stmt = (
     just(Keyword.Return)
-    .ignore_then(expr)
-    .map(lambda item: ast.ReturnStatement(expression=Maybe.Just(item)))
+    .ignore_then(expr.or_not())
+    .map(lambda item: ast.ReturnStatement(expression=item))
 )
 
 func_decl = func_sig.then(block(stmt, "function definition")).map(
@@ -263,15 +265,19 @@ loop_stmt = stmt | break_stmt | continue_stmt
 
 while_loop = (
     just(Keyword.While)
-    .ignore_then(expr)
+    .ignore_then(
+        expr.require(ParseError(expected="expression", following="'while' keyword"))
+    )
     .then(block(loop_stmt))
     .map(lambda items: ast.WhileLoop(*items))
 )
 
 for_loop = (
     named_decl(Keyword.For)
-    .then_ignore(just(Keyword.In))
-    .then(expr)
+    .then_ignore(
+        just(Keyword.In).require(ParseError(expected="'in'", following="identifier"))
+    )
+    .then(expr.require(ParseError(expected="expression", following="'in' keyword")))
     .then(block(loop_stmt))
     .map(
         lambda items: ast.ForLoop(
@@ -290,16 +296,26 @@ is_arm = (
 # TODO: Parse `else` blocks in when statements.
 when_stmt = (
     kw_expr(Keyword.When).then(
-        just(Keyword.As).ignore_then(ident).or_not().then(block(is_arm))
+        just(Keyword.As)
+        .ignore_then(
+            ident.require(ParseError(expected="identifier", following="'as' keyword"))
+        )
+        .or_not()
+        .then(block(is_arm))
     )
 ).map(lambda item: ast.WhenStatement(item[0], item[1][0], item[1][1], []))
+
+eof = Nothing[Token, ParseError]()
 
 decl = (
     enum_decl | struct_decl | const_decl | let_decl | func_decl | type_def | trait_decl
 )
 
-
-decls = lines(decl)
+decls = (
+    lines(decl)
+    .then_ignore(eof)
+    .require(ParseError(expected="end of input", following="declaration"))
+)
 
 
 def parse(

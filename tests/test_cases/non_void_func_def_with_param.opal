@@ -1,0 +1,1 @@
+def func(param: PType) -> RType {}

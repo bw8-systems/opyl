@@ -25,13 +25,13 @@ def check_precedence(input: Stream[Token]) -> int:
     match input.peek():
         case Maybe.Just(tok):
             match tok.item:
-                case op if op in BinOp:
+                case op if isinstance(op, Basic) and op in BinOp:
                     return BinOp(op).precedence()
-                case Basic.LeftParenthesis:
+                case paren if paren is Basic.LeftParenthesis:
                     return 8
-                case Basic.LeftBracket:
+                case brack if brack is Basic.LeftBracket:
                     return 8
-                case Basic.Period:
+                case period if period is Basic.Period:
                     return 8
                 case _:
                     return 0

@@ -1,0 +1,3 @@
+struct SomeStruct {
+    name: Type
+}

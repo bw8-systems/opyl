@@ -30,8 +30,8 @@ from opyl.support.span import Spanned
 
 
 @dataclass
-class LexResult:
-    stream: Stream[Token]
+class LexResult[T]:
+    stream: Stream[T]
     errors: list[ParseResult.Error[LexError]]
 
 
@@ -156,22 +156,25 @@ comment = (
     .map(lambda chars: "".join(chars))
 ).map(Comment)
 
-strip = (whitespace | comment).repeated().or_not()
+strip = whitespace.repeated().or_not()
 
 # TODO: Update identifier / keyword parsers so that this isn't
 # position dependent.
 token = keyword | identifier | basic | string | character | integer
 
 tokenizer = (
-    strip.ignore_then(token.spanned())
+    strip.ignore_then((token | comment).spanned())
     .repeated()
     .then_ignore(eof)
     .require(LexError.UnexpectedCharacter)
 )
 
 
-def tokenize(source: str, file_handle: os.PathLike[str] | None = None) -> LexResult:
-    tokens = list[Spanned[Token]]()
+def tokenize_with_comments(
+    source: str,
+    file_handle: os.PathLike[str] | None = None,
+) -> LexResult[Token | Comment]:
+    tokens = list[Spanned[Token | Comment]]()
     errors = list[ParseResult.Error[LexError]]()
     span_base = 0
 
@@ -197,4 +200,26 @@ def tokenize(source: str, file_handle: os.PathLike[str] | None = None) -> LexRes
     return LexResult(
         stream=Stream(file_handle=file_handle, spans=tokens),
         errors=errors,
+    )
+
+
+def tokenize(
+    source: str, file_handle: os.PathLike[str] | None = None
+) -> LexResult[Token]:
+    with_comments = tokenize_with_comments(source, file_handle)
+    return LexResult(
+        stream=filter_comments(with_comments.stream), errors=with_comments.errors
+    )
+
+
+def filter_comments(with_comments: Stream[Token | Comment]) -> Stream[Token]:
+    def is_token(
+        spanned: Spanned[Token | Comment],
+    ) -> t.TypeGuard[Spanned[Token]]:
+        return not isinstance(spanned.item, Comment)
+
+    return Stream(
+        file_handle=with_comments.file_handle,
+        spans=list(filter(is_token, with_comments.spans)),
+        position=with_comments.position,
     )

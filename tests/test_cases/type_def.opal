@@ -1,0 +1,1 @@
+type TypeAlias = SourceType

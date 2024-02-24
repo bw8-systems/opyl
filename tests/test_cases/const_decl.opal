@@ -1,0 +1,1 @@
+const NAME: Type = value
