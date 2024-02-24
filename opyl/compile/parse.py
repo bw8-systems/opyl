@@ -1,6 +1,6 @@
 import typing as t
 
-from opyl.compile import op_ast
+from opyl.compile import ast
 from opyl.compile.token import Token, Keyword, Basic, Identifier
 from opyl.compile.error import ParseError
 from opyl.compile.pratt import expr
@@ -10,11 +10,11 @@ from opyl.support.union import Maybe
 from opyl.support.atoms import just, ident, newlines
 
 
-class Statement(Parser[Token, op_ast.Statement, ParseError]):
+class Statement(Parser[Token, ast.Statement, ParseError]):
     @t.override
     def parse(
         self, input: Stream[Token]
-    ) -> ParseResult.Type[Token, op_ast.Statement, ParseError]:
+    ) -> ParseResult.Type[Token, ast.Statement, ParseError]:
         return (
             return_stmt
             | if_stmt
@@ -74,7 +74,7 @@ def named_decl(keyword: Keyword) -> Parser[Token, Identifier, ParseError]:
     )
 
 
-def kw_expr(keyword: Keyword) -> Parser[Token, op_ast.Expression, ParseError]:
+def kw_expr(keyword: Keyword) -> Parser[Token, ast.Expression, ParseError]:
     return just(keyword).ignore_then(
         expr.require(
             ParseError(expected="expression", following=f"'{keyword.value}' keyword")
@@ -89,7 +89,7 @@ field = ident.then(
     just(Basic.Colon).ignore_then(
         type.require(ParseError(expected="type", following="':'"))
     )
-).map(lambda items: op_ast.Field(*items))
+).map(lambda items: ast.Field(*items))
 
 initializer = (
     just(Basic.Equal)
@@ -105,7 +105,7 @@ const_decl = (
         )
     )
     .map(
-        lambda items: op_ast.ConstDeclaration(
+        lambda items: ast.ConstDeclaration(
             name=items[0].name,
             type=items[0].type,
             initializer=items[1],
@@ -122,7 +122,7 @@ let_decl = (
         )
     )
     .map(
-        lambda items: op_ast.VarDeclaration(
+        lambda items: ast.VarDeclaration(
             is_mut=items[0],
             name=items[1][0].name,
             type=Maybe.Just(items[1][0].type),
@@ -141,7 +141,7 @@ param_spec = (
     .then(just(Keyword.Mut).boolean())
     .then(type)
     .map(
-        lambda items: op_ast.ParamSpec(
+        lambda items: ast.ParamSpec(
             is_anon=items[0][0][0],
             ident=items[0][0][1],
             is_mut=items[0][1],
@@ -171,7 +171,7 @@ func_sig = (
         .or_not()
     )
     .map(
-        lambda items: op_ast.FunctionSignature(
+        lambda items: ast.FunctionSignature(
             name=items[0][0],
             params=items[0][1],
             return_type=items[1],
@@ -182,16 +182,16 @@ func_sig = (
 stmt = Statement()
 
 
-break_stmt = just(Keyword.Break).to(op_ast.BreakStatement())
-continue_stmt = just(Keyword.Continue).to(op_ast.ContinueStatement())
+break_stmt = just(Keyword.Break).to(ast.BreakStatement())
+continue_stmt = just(Keyword.Continue).to(ast.ContinueStatement())
 return_stmt = (
     just(Keyword.Return)
     .ignore_then(expr)
-    .map(lambda item: op_ast.ReturnStatement(expression=Maybe.Just(item)))
+    .map(lambda item: ast.ReturnStatement(expression=Maybe.Just(item)))
 )
 
 func_decl = func_sig.then(block(stmt, "function definition")).map(
-    lambda items: op_ast.FunctionDeclaration(
+    lambda items: ast.FunctionDeclaration(
         name=items[0].name,
         signature=items[0],
         body=items[1],
@@ -202,7 +202,7 @@ struct_decl = (
     named_decl(Keyword.Struct)
     .then(block_pair(field, func_decl, "struct definition"))
     .map(
-        lambda items: op_ast.StructDeclaration(
+        lambda items: ast.StructDeclaration(
             name=items[0],
             fields=items[1][0],
             functions=items[1][1],
@@ -222,7 +222,7 @@ enum_decl = (
             end=newlines.ignore_then(just(Basic.RightBrace)),
         )
     )
-    .map(lambda items: op_ast.EnumDeclaration(name=items[0], members=items[1]))
+    .map(lambda items: ast.EnumDeclaration(name=items[0], members=items[1]))
 )
 
 type_def = (
@@ -232,12 +232,12 @@ type_def = (
         .ignore_then(type.separated_by(just(Basic.Pipe)).at_least(1))
         .require(ParseError(expected="type alias", following="'type' keyword"))
     )
-).map(lambda items: op_ast.TypeDefinition(*items))
+).map(lambda items: ast.TypeDefinition(*items))
 
 trait_decl = (
     named_decl(Keyword.Trait)
     .then(block(func_sig, "trait definition"))
-    .map(lambda items: op_ast.TraitDeclaration(*items))
+    .map(lambda items: ast.TraitDeclaration(*items))
 )
 
 
@@ -251,7 +251,7 @@ if_stmt = (
     .then(block(stmt))
     .then(else_block.or_else([]))
     .map(
-        lambda items: op_ast.IfStatement(
+        lambda items: ast.IfStatement(
             if_condition=items[0][0],
             if_statements=items[0][1],
             else_statements=items[1],
@@ -265,7 +265,7 @@ while_loop = (
     just(Keyword.While)
     .ignore_then(expr)
     .then(block(loop_stmt))
-    .map(lambda items: op_ast.WhileLoop(*items))
+    .map(lambda items: ast.WhileLoop(*items))
 )
 
 for_loop = (
@@ -274,7 +274,7 @@ for_loop = (
     .then(expr)
     .then(block(loop_stmt))
     .map(
-        lambda items: op_ast.ForLoop(
+        lambda items: ast.ForLoop(
             target=items[0][0], iterator=items[0][1], statements=items[1]
         )
     )
@@ -284,7 +284,7 @@ is_arm = (
     just(Keyword.Is)
     .ignore_then(type.require(ParseError(expected="type", following="'is' keyword")))
     .then(block(stmt, "is arm"))
-    .map(lambda items: op_ast.IsClause(*items))
+    .map(lambda items: ast.IsClause(*items))
 )
 
 # TODO: Parse `else` blocks in when statements.
@@ -292,7 +292,7 @@ when_stmt = (
     kw_expr(Keyword.When).then(
         just(Keyword.As).ignore_then(ident).or_not().then(block(is_arm))
     )
-).map(lambda item: op_ast.WhenStatement(item[0], item[1][0], item[1][1], []))
+).map(lambda item: ast.WhenStatement(item[0], item[1][0], item[1][1], []))
 
 decl = (
     enum_decl | struct_decl | const_decl | let_decl | func_decl | type_def | trait_decl
@@ -304,7 +304,7 @@ decls = lines(decl)
 
 def parse(
     stream: Stream[Token],
-) -> ParseResult.Type[Token, list[op_ast.Declaration], ParseError]:
+) -> ParseResult.Type[Token, list[ast.Declaration], ParseError]:
     """
     In order to simplify error recovery while also maintaining error reporting ergononomics, the general approach to error
     recovery being taken here is, "don't," where the twist is that rather than parsing the entire token stream in one go,

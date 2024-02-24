@@ -82,6 +82,11 @@ class TestIntegerLiteral:
             integer, "0x_4_5", IntegerLiteral(0x45, IntegerLiteralBase.Hexadecimal)
         )
 
+    def test_hex_literal_with_followers(self):
+        lex_test(
+            integer, "0x3 foo 'a'", IntegerLiteral(0x3, IntegerLiteralBase.Hexadecimal)
+        )
+
 
 class TestIdentifier:
     def test_ident(self):

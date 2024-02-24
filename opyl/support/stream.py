@@ -64,20 +64,17 @@ class Stream[ItemType]:
             position=min(self.position + by, len(self.spans)),
         )
 
-    def advance_to(self, to: int) -> t.Self:
-        return self.__class__(
-            file_handle=self.file_handle,
-            spans=self.spans,
-            position=to,
-        )
-
     def startswith(self, pattern: t.Sequence[ItemType]) -> bool:
         if len(pattern) == 0:
             return False
         if len(self.spans) < len(pattern):
             return False
 
-        for pat, spanned in zip(pattern, self.spans):
+        subslice = self.spans[self.position :]
+        if len(subslice) == 0:
+            return False
+
+        for pat, spanned in zip(pattern, subslice):
             if spanned.item != pat:
                 return False
 

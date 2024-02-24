@@ -25,13 +25,13 @@ def check_precedence(input: Stream[Token]) -> int:
     match input.peek():
         case Maybe.Just(tok):
             match tok.item:
-                case op if isinstance(op, Basic) and op in BinOp:
+                case op if op in BinOp:
                     return BinOp(op).precedence()
-                case paren if paren is Basic.LeftParenthesis:
+                case Basic.LeftParenthesis:
                     return 8
-                case brack if brack is Basic.LeftBracket:
+                case Basic.LeftBracket:
                     return 8
-                case period if period is Basic.Period:
+                case Basic.Period:
                     return 8
                 case _:
                     return 0
@@ -88,7 +88,7 @@ grouped_expr = (
 def bin_op_expr(left: ex.Expression) -> Parser[Token, BinaryExpression, ParseError]:
     return (
         # TODO: Don't like isinstance here and elsewhere
-        filt(lambda tok: isinstance(tok, Basic) and tok in BinOp)
+        filt(lambda tok: tok in BinOp)
         .map(lambda op: BinOp(op))
         .map(lambda op: (op, op.adjusted_precedence()))
         .then_with_ctx(lambda op_prec, input: expression(op_prec[1]).parse(input))

@@ -9,6 +9,10 @@ from opyl.compile.token import (
 from opyl.support.stream import Stream
 from opyl.compile import lex
 from opyl.support.atoms import just, integer
+from opyl.support.combinator import OneOf, ParseResult
+from opyl.compile import error
+
+PR = ParseResult
 
 
 @pytest.fixture
@@ -106,3 +110,10 @@ class TestCombinator:
         tokens = lex.tokenize("").stream
         result = integer.separated_by(just(Basic.Comma)).parse(tokens).unwrap()
         assert result[0] == []
+
+    def test_one_of(self):
+        match OneOf[str, error.LexError]("01").parse(Stream.from_source("1")):
+            case PR.Match(_):
+                assert True
+            case _:
+                assert False

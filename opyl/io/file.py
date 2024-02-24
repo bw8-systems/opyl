@@ -1,12 +1,17 @@
 import enum
 import os
 import typing as t
+import sys
 from collections.abc import Iterator
 
 if t.TYPE_CHECKING:
     from _typeshed import OpenTextMode
 
 from opyl.support.union import Result
+
+stdin = sys.stdin
+stdout = sys.stdout
+stderr = sys.stderr
 
 
 class IOError(enum.Enum):

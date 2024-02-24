@@ -52,6 +52,12 @@ class Result:
         def expect(self, _expectation: str) -> T:
             return self.item
 
+        def is_ok(self) -> t.Literal[True]:
+            return True
+
+        def is_err(self) -> t.Literal[False]:
+            return False
+
     @dataclass
     class Err[E]:
         item: E
@@ -64,9 +70,17 @@ class Result:
 
         def and_then[
             U
-        ](self, op: "t.Callable[[t.Any], Result.Type[U, E]]") -> "Result.Type[U, E]":
+        ](
+            self, op: "t.Callable[[t.Any], Result.Type[U, E]]"
+        ) -> "Result.Type[t.Any, E]":
             return self
 
         def expect(self, expectation: str) -> t.NoReturn:
             print(expectation, file=sys.stderr)
             exit(-1)
+
+        def is_ok(self) -> t.Literal[False]:
+            return False
+
+        def is_err(self) -> t.Literal[True]:
+            return True

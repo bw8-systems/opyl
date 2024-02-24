@@ -54,43 +54,48 @@ def padded(
 def integer_digits(
     digs: Parser[str, str, LexError]
 ) -> Parser[str, list[str], LexError]:
-    return (
-        padded(just("_"), digs)
-        .repeated()
-        .at_least(1)
-        .require(LexError.MalformedIntegerLiteral)
-    )
+    return padded(just("_"), digs).repeated().at_least(1)
 
 
-def integer_mapper(base: int) -> t.Callable[[list[str]], IntegerLiteral]:
-    literal_base = {
-        2: IntegerLiteralBase.Binary,
-        10: IntegerLiteralBase.Decimal,
-        16: IntegerLiteralBase.Hexadecimal,
-    }[base]
+def integer_mapper(
+    base: t.Literal[2] | t.Literal[10] | t.Literal[16],
+) -> t.Callable[[list[str]], IntegerLiteral]:
+    match base:
+        case 2:
+            literal_base = IntegerLiteralBase.Binary
+        case 10:
+            literal_base = IntegerLiteralBase.Decimal
+        case 16:
+            literal_base = IntegerLiteralBase.Hexadecimal
 
     return lambda chars: IntegerLiteral(
         int("".join(chars), base=base), base=literal_base
     )
 
 
-bin_integer = startswith("0b").ignore_then(integer_digits(bin)).map(integer_mapper(2))
+bin_integer = (
+    startswith("0b")
+    .ignore_then(integer_digits(bin).require(LexError.MalformedBinaryIntegerLiteral))
+    .map(integer_mapper(2))
+)
 
 dec_integer = (
-    dec.and_check(lambda char: char != "0").chain(padded(just("_"), dec).repeated())
+    dec.and_check(lambda char: char != "0").chain((padded(just("_"), dec).repeated()))
 ).map(integer_mapper(10))
 
-hex_integer = (startswith("0x").ignore_then(integer_digits(hex))).map(
-    integer_mapper(16)
+hex_integer = (
+    startswith("0x")
+    .ignore_then(
+        integer_digits(hex).require(LexError.MalformedHexadecimalIntegerLiteral)
+    )
+    .map(integer_mapper(16))
 )
 
 integer = (
     bin_integer
     | dec_integer
     | hex_integer
-    | just("0")
-    .map(lambda char: int(char, base=10))
-    .map(lambda zero: IntegerLiteral(zero))
+    | just("0").map(lambda char: IntegerLiteral(int(char, base=10)))
 )
 
 identifier = (
@@ -165,13 +170,13 @@ strip = (whitespace | comment).repeated().or_not()
 
 # TODO: Update identifier / keyword parsers so that this isn't
 # position dependent.
-token = integer | keyword | identifier | basic | string | character
+token = keyword | identifier | basic | string | character | integer
 
 tokenizer = (
     strip.ignore_then(token.spanned())
     .repeated()
     .then_ignore(eof)
-    # .require(LexError.UnexpectedCharacter)
+    .require(LexError.UnexpectedCharacter)
 )
 
 
@@ -181,7 +186,6 @@ def tokenize(source: str, file_handle: str | None = None) -> LexResult:
     span_base = 0
 
     for line in source.splitlines():
-        print(line)
         match tokenizer.parse(Stream.from_source(line, file_handle, span_base)):
             case PR.Match(toks, rem):
                 tokens.extend(toks)
@@ -198,7 +202,7 @@ def tokenize(source: str, file_handle: str | None = None) -> LexResult:
             case PR.Error() as error:
                 errors.append(error)
 
-        span_base += len(line)
+        span_base += len(line) + 1
 
     return LexResult(
         stream=Stream(file_handle=file_handle, spans=tokens),

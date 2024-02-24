@@ -1,5 +1,2 @@
-let another_string: char = '4
-let another_string: char = '4
-let another_string: char = '4
-let another_string: char = '4
-let another_string: char = '4
+val = 0xk
+foo = "Hello, World!'

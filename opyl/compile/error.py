@@ -7,6 +7,7 @@ from opyl.support.span import Span
 from opyl.support.stream import Source
 from opyl.support.combinator import ParseResult
 from opyl.console.color import colors
+from opyl.io import file
 
 
 @dataclass
@@ -46,18 +47,9 @@ class LexError(enum.Enum):
     UnexpectedCharacter = "unexpected character"
     UnterminatedStringLiteral = "unterminated string literal"
     UnterminatedCharacterLiteral = "unterminated character literal"
-    MalformedIntegerLiteral = "malformed integer literal"
-
-    def pointer_offset(self) -> int:
-        match self:
-            case self.UnexpectedCharacter:
-                return 0
-            case self.UnterminatedStringLiteral:
-                return 1
-            case self.UnterminatedCharacterLiteral:
-                return 0
-            case self.MalformedIntegerLiteral:
-                return 0
+    MalformedHexadecimalIntegerLiteral = "malformed hexadecimal integer literal"
+    MalformedDecimalIntegerLiteral = "malformed decimal integer literal"
+    MalformedBinaryIntegerLiteral = "malformed binary integer literal"
 
 
 @dataclass
@@ -88,16 +80,19 @@ def format_error(error: ParseError, span: Span, source: Source):
     return message
 
 
-def report_lex_errors(errors: list[ParseResult.Error[LexError]], source: Source):
+def report_lex_errors(
+    errors: list[ParseResult.Error[LexError]],
+    source: Source,
+    file: t.TextIO = file.stderr,
+):
     for error in errors:
         start, _ = to_location(error.span, source.text)
-        print(start.column)
         message = f"{colors.bold}{source.file}:{start.line+1}:{start.column}: {colors.red}lexical error:{colors.reset}{colors.bold} {error.value.value}{colors.reset}"
         message += f"\n    {source.line(start.line)}"
         message += (
             "\n    "
-            + (start.column + error.value.pointer_offset()) * " "
+            + start.column * " "
             + f"{colors.bold}{colors.green}^{colors.reset}"
         )
 
-        print(message)
+        print(message, file=file)
