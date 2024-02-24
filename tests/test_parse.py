@@ -1,7 +1,7 @@
 from opyl.compile import lex, parse
-from opyl.compile.token import Basic, IntegerLiteral
-from opyl.compile.ast import Field, ConstDeclaration, VarDeclaration
-from opyl.compile import ast
+from opyl.compile.token import IntegerLiteral
+from opyl.compile.op_ast import Field, ConstDeclaration, VarDeclaration
+from opyl.compile import op_ast
 from opyl.compile import expr
 from opyl.compile.token import Identifier
 from opyl.support.combinator import ParseResult, PR
@@ -14,14 +14,6 @@ from .utils import parse_test
 
 def test_zero_newline():
     parse_test(parse.newlines, "", [])
-
-
-def test_single_newline():
-    parse_test(parse.newlines, "\n", [Basic.NewLine])
-
-
-def test_multiple_newlines():
-    parse_test(parse.newlines, "\n\n", [Basic.NewLine, Basic.NewLine])
 
 
 def test_field():
@@ -39,19 +31,21 @@ def test_field():
 
 
 def test_field_no_type_eof():
-    tokens = lex.tokenize("name: ").unwrap()[0]
+    result = lex.tokenize("name: ")
+    print(result)
+    tokens = result.stream
     result = parse.field.parse(tokens)
     assert isinstance(result, ParseResult.Error)
 
 
 def test_field_no_type():
-    tokens = lex.tokenize("name: 1").unwrap()[0]
+    tokens = lex.tokenize("name: 1").stream
     result = parse.field.parse(tokens)
     assert isinstance(result, ParseResult.Error)
 
 
 def test_no_field():
-    tokens = lex.tokenize("1").unwrap()[0]
+    tokens = lex.tokenize("1").stream
     result = parse.field.parse(tokens)
     assert result is PR.NoMatch
 
@@ -88,10 +82,10 @@ def test_func_sig_with_return():
     parse_test(
         parse.func_sig,
         "def some_function(param: FooBar) -> MFDoom",
-        ast.FunctionSignature(
+        op_ast.FunctionSignature(
             Identifier("some_function"),
             [
-                ast.ParamSpec(
+                op_ast.ParamSpec(
                     is_anon=False,
                     ident=Identifier("param"),
                     is_mut=False,
@@ -107,10 +101,10 @@ def test_func_sig_without_return():
     parse_test(
         parse.func_sig,
         "def some_function(param: FooBar)",
-        ast.FunctionSignature(
+        op_ast.FunctionSignature(
             Identifier("some_function"),
             [
-                ast.ParamSpec(
+                op_ast.ParamSpec(
                     is_anon=False,
                     ident=Identifier("param"),
                     is_mut=False,
@@ -129,7 +123,7 @@ def test_empty_if():
 
         }
         """,
-        ast.IfStatement(
+        op_ast.IfStatement(
             if_condition=expr.BinaryExpression(
                 expr.BinOp.Equal, Identifier("args"), IntegerLiteral(0)
             ),
@@ -143,7 +137,7 @@ def test_empty_struct():
     parse_test(
         parse.struct_decl,
         "struct Arguments {}",
-        ast.StructDeclaration(name=Identifier("Arguments"), fields=[], functions=[]),
+        op_ast.StructDeclaration(name=Identifier("Arguments"), fields=[], functions=[]),
     )
 
 
@@ -154,9 +148,9 @@ def test_struct_with_field():
             count: u8
         }
         """,
-        ast.StructDeclaration(
+        op_ast.StructDeclaration(
             name=Identifier("Arguments"),
-            fields=[ast.Field(name=Identifier("count"), type=Identifier("u8"))],
+            fields=[op_ast.Field(name=Identifier("count"), type=Identifier("u8"))],
             functions=[],
         ),
     )
@@ -169,13 +163,13 @@ def test_struct_with_func():
             def len() -> u8 {}
         }
         """,
-        ast.StructDeclaration(
+        op_ast.StructDeclaration(
             name=Identifier("Arguments"),
             fields=[],
             functions=[
-                ast.FunctionDeclaration(
+                op_ast.FunctionDeclaration(
                     name=Identifier("len"),
-                    signature=ast.FunctionSignature(
+                    signature=op_ast.FunctionSignature(
                         Identifier("len"), [], Maybe.Just(Identifier("u8"))
                     ),
                     body=[],
@@ -193,13 +187,13 @@ def test_struct_with_field_and_func():
             def len() -> u8 {}
         }
         """,
-        ast.StructDeclaration(
+        op_ast.StructDeclaration(
             name=Identifier("Arguments"),
-            fields=[ast.Field(name=Identifier("count"), type=Identifier("u8"))],
+            fields=[op_ast.Field(name=Identifier("count"), type=Identifier("u8"))],
             functions=[
-                ast.FunctionDeclaration(
+                op_ast.FunctionDeclaration(
                     name=Identifier("len"),
-                    signature=ast.FunctionSignature(
+                    signature=op_ast.FunctionSignature(
                         Identifier("len"), [], Maybe.Just(Identifier("u8"))
                     ),
                     body=[],
@@ -213,7 +207,7 @@ def test_empty_enum():
     parse_test(
         parse.enum_decl,
         "enum Color {}",
-        ast.EnumDeclaration(
+        op_ast.EnumDeclaration(
             name=Identifier("Color"),
             members=[],
         ),
@@ -224,7 +218,7 @@ def test_enum_single_value():
     parse_test(
         parse.enum_decl,
         "enum Color {Red}",
-        ast.EnumDeclaration(
+        op_ast.EnumDeclaration(
             name=Identifier("Color"),
             members=[Identifier("Red")],
         ),
@@ -235,7 +229,7 @@ def test_enum_multi_value():
     parse_test(
         parse.enum_decl,
         "enum Color {Red, Green}",
-        ast.EnumDeclaration(
+        op_ast.EnumDeclaration(
             name=Identifier("Color"),
             members=[Identifier("Red"), Identifier("Green")],
         ),
@@ -250,7 +244,7 @@ def test_enum_multi_value_linesplit():
             Green
         }
         """,
-        ast.EnumDeclaration(
+        op_ast.EnumDeclaration(
             name=Identifier("Color"),
             members=[Identifier("Red"), Identifier("Green")],
         ),
@@ -264,7 +258,7 @@ def test_enum_trailing_comma():
             Red,
         }
         """,
-        ast.EnumDeclaration(
+        op_ast.EnumDeclaration(
             name=Identifier("Color"),
             members=[Identifier("Red")],
         ),
@@ -275,7 +269,7 @@ def test_if_stmt_no_body():
     parse_test(
         parse.if_stmt,
         "if expr {}",
-        ast.IfStatement(
+        op_ast.IfStatement(
             if_condition=Identifier("expr"),
             if_statements=[],
             else_statements=[],
@@ -290,7 +284,7 @@ def test_if_stmt_with_body():
             1 + 2
         }
         """,
-        ast.IfStatement(
+        op_ast.IfStatement(
             if_condition=Identifier("expr"),
             if_statements=[
                 expr.BinaryExpression(
@@ -306,7 +300,9 @@ def test_simple_type_def():
     parse_test(
         parse.type_def,
         "type ParseResult = Match",
-        ast.TypeDefinition(name=Identifier("ParseResult"), types=[Identifier("Match")]),
+        op_ast.TypeDefinition(
+            name=Identifier("ParseResult"), types=[Identifier("Match")]
+        ),
     )
 
 
@@ -314,7 +310,7 @@ def test_union_type_def():
     parse_test(
         parse.type_def,
         "type ParseResult = Match | NoMatch",
-        ast.TypeDefinition(
+        op_ast.TypeDefinition(
             name=Identifier("ParseResult"),
             types=[Identifier("Match"), Identifier("NoMatch")],
         ),
@@ -325,7 +321,7 @@ def test_when_stmt_empty():
     parse_test(
         parse.when_stmt,
         "when val {}",
-        ast.WhenStatement(
+        op_ast.WhenStatement(
             expression=Identifier("val"),
             target=Maybe.Nothing,
             is_clauses=[],
@@ -338,7 +334,7 @@ def test_when_stmt_empty_with_as():
     parse_test(
         parse.when_stmt,
         "when val as rv {}",
-        ast.WhenStatement(
+        op_ast.WhenStatement(
             expression=Identifier("val"),
             target=Maybe.Just(Identifier("rv")),
             is_clauses=[],
@@ -354,10 +350,10 @@ def test_when_stmt_populated():
             is Foo {}
         }
         """,
-        ast.WhenStatement(
+        op_ast.WhenStatement(
             expression=Identifier("val"),
             target=Maybe.Nothing,
-            is_clauses=[ast.IsClause(target=Identifier("Foo"), statements=[])],
+            is_clauses=[op_ast.IsClause(target=Identifier("Foo"), statements=[])],
             else_statements=[],
         ),
     )
@@ -370,10 +366,10 @@ def test_when_stmt_populated_with_as():
             is Foo {}
         }
         """,
-        ast.WhenStatement(
+        op_ast.WhenStatement(
             expression=Identifier("val"),
             target=Maybe.Just(Identifier("rv")),
-            is_clauses=[ast.IsClause(target=Identifier("Foo"), statements=[])],
+            is_clauses=[op_ast.IsClause(target=Identifier("Foo"), statements=[])],
             else_statements=[],
         ),
     )

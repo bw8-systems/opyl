@@ -1,6 +1,7 @@
 import typing as t
 from dataclasses import dataclass
 from enum import Enum
+import sys
 
 
 class Maybe:
@@ -29,12 +30,43 @@ class Result:
         Ok = 0
         Err = 1
 
+    type Type[T, E] = Ok[T] | Err[E]
+
     @dataclass
     class Ok[T]:
         item: T
+
+        def unwrap(self) -> T:
+            return self.item
+
+        def unwrap_err(self) -> t.NoReturn:
+            assert False, "Unwrapping failed. Result.Ok is not Result.Err"
+
+        def and_then[
+            U
+        ](
+            self, op: "t.Callable[[T], Result.Type[U, t.Any]]"
+        ) -> "Result.Type[U, t.Any]":
+            return op(self.item)
+
+        def expect(self, _expectation: str) -> T:
+            return self.item
 
     @dataclass
     class Err[E]:
         item: E
 
-    type Type[T, E] = Ok[T] | Err[E]
+        def unwrap(self) -> t.NoReturn:
+            assert False, "Unwrapping failed. Result.Err is not Result.Ok"
+
+        def unwrap_err(self) -> E:
+            return self.item
+
+        def and_then[
+            U
+        ](self, op: "t.Callable[[t.Any], Result.Type[U, E]]") -> "Result.Type[U, E]":
+            return self
+
+        def expect(self, expectation: str) -> t.NoReturn:
+            print(expectation, file=sys.stderr)
+            exit(-1)

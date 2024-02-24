@@ -38,7 +38,8 @@ def lex_test[T](parser: Parser[str, T, t.Any], source: str, expected: T | None):
 
 
 def parse_test[T](parser: Parser[t.Any, T, t.Any], source: str, expected: T | None):
-    stream = lex.tokenize(source).unwrap()[0]
+    stream = lex.tokenize(source).stream
+    pprint(stream)
     _test(parser, stream, expected)
 
 

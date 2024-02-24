@@ -1,10 +1,11 @@
 import typing as t
-import enum
 from dataclasses import dataclass
 from copy import copy
+import enum
 
 from opyl.support.span import Span
 from opyl.support.stream import Source
+from opyl.support.combinator import ParseResult
 from opyl.console.color import colors
 
 
@@ -42,11 +43,21 @@ def to_location(span: Span, source: str) -> tuple[TextPosition, TextPosition]:
 
 
 class LexError(enum.Enum):
-    IllegalCharacter = enum.auto()
-    UnexpectedCharacter = enum.auto()
-    UnterminatedStringLiteral = enum.auto()
-    UnterminatedCharacterLiteral = enum.auto()
-    MalformedIntegerLiteral = enum.auto()
+    UnexpectedCharacter = "unexpected character"
+    UnterminatedStringLiteral = "unterminated string literal"
+    UnterminatedCharacterLiteral = "unterminated character literal"
+    MalformedIntegerLiteral = "malformed integer literal"
+
+    def pointer_offset(self) -> int:
+        match self:
+            case self.UnexpectedCharacter:
+                return 0
+            case self.UnterminatedStringLiteral:
+                return 1
+            case self.UnterminatedCharacterLiteral:
+                return 0
+            case self.MalformedIntegerLiteral:
+                return 0
 
 
 @dataclass
@@ -75,3 +86,18 @@ def format_error(error: ParseError, span: Span, source: Source):
     )
 
     return message
+
+
+def report_lex_errors(errors: list[ParseResult.Error[LexError]], source: Source):
+    for error in errors:
+        start, _ = to_location(error.span, source.text)
+        print(start.column)
+        message = f"{colors.bold}{source.file}:{start.line+1}:{start.column}: {colors.red}lexical error:{colors.reset}{colors.bold} {error.value.value}{colors.reset}"
+        message += f"\n    {source.line(start.line)}"
+        message += (
+            "\n    "
+            + (start.column + error.value.pointer_offset()) * " "
+            + f"{colors.bold}{colors.green}^{colors.reset}"
+        )
+
+        print(message)

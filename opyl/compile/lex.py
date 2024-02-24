@@ -1,4 +1,5 @@
 import typing as t
+from dataclasses import dataclass
 
 from opyl.compile.error import LexError
 from opyl.compile.token import (
@@ -22,13 +23,22 @@ from opyl.support.combinator import (
     choice,
     startswith,
     Parser,
+    Nothing,
 )
 from opyl.support.stream import Stream
+from opyl.support.span import Spanned
+
+
+@dataclass
+class LexResult:
+    stream: Stream[Token]
+    errors: list[ParseResult.Error[LexError]]
+
 
 just = Just[str, LexError]
 filt = Filter[str, LexError]
 one_of = OneOf[str, LexError]
-
+eof = Nothing[str, LexError]()
 
 bin = one_of("01")
 dec = one_of("0123456789")
@@ -157,16 +167,40 @@ strip = (whitespace | comment).repeated().or_not()
 # position dependent.
 token = integer | keyword | identifier | basic | string | character
 
-tokenizer = strip.ignore_then(token.spanned()).repeated()
+tokenizer = (
+    strip.ignore_then(token.spanned())
+    .repeated()
+    .then_ignore(eof)
+    # .require(LexError.UnexpectedCharacter)
+)
 
 
-def tokenize(
-    source: str, file_handle: str | None = None
-) -> ParseResult.Type[str, Stream[Token], LexError]:
-    match tokenizer.parse(Stream.from_source(source, file_handle)):
-        case PR.Match(toks, rem):
-            return PR.Match(Stream(file_handle, toks), rem)
-        case PR.NoMatch:
-            return PR.NoMatch
-        case PR.Error() as error:
-            return error
+def tokenize(source: str, file_handle: str | None = None) -> LexResult:
+    tokens = list[Spanned[Token]]()
+    errors = list[ParseResult.Error[LexError]]()
+    span_base = 0
+
+    for line in source.splitlines():
+        print(line)
+        match tokenizer.parse(Stream.from_source(line, file_handle, span_base)):
+            case PR.Match(toks, rem):
+                tokens.extend(toks)
+
+                # TODO: Don't assert.
+                assert rem.position == len(
+                    line
+                ), "Top level `require` should prevent stream from being incompletely consumed."
+            case PR.NoMatch:
+                # TODO: Don't assert.
+                assert (
+                    False
+                ), "Top level `require` should prevent this from being reachable."
+            case PR.Error() as error:
+                errors.append(error)
+
+        span_base += len(line)
+
+    return LexResult(
+        stream=Stream(file_handle=file_handle, spans=tokens),
+        errors=errors,
+    )

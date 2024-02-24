@@ -13,7 +13,7 @@ from opyl.support.atoms import just, integer
 
 @pytest.fixture
 def no_trailing_or_leading_list() -> Stream[Token]:
-    return lex.tokenize("1, 2, 3, 4").unwrap()[0]
+    return lex.tokenize("1, 2, 3, 4").stream
 
 
 class TestStream:
@@ -44,12 +44,12 @@ class TestStream:
         assert not stream.startswith(" ")
 
     def test_startswith_tok_success(self):
-        tokens, _ = lex.tokenize("foo").unwrap()
+        tokens = lex.tokenize("foo").stream
 
         assert tokens.startswith([Identifier("foo")])
 
     def test_startswith_multi_tok_success(self):
-        tokens, _ = lex.tokenize("foo 4").unwrap()
+        tokens = lex.tokenize("foo 4").stream
 
         assert tokens.startswith([Identifier("foo"), IntegerLiteral(4)])
 
@@ -88,7 +88,7 @@ class TestCombinator:
         ]
 
     def test_separated_by_allow_trailing_with_trailing(self):
-        tokens = lex.tokenize("1, 2, 3, 4,").unwrap()[0]
+        tokens = lex.tokenize("1, 2, 3, 4,").stream
         result = (
             integer.separated_by(just(Basic.Comma))
             .allow_trailing()
@@ -103,6 +103,6 @@ class TestCombinator:
         ]
 
     def test_separated_by_empty(self):
-        tokens = lex.tokenize("").unwrap()[0]
+        tokens = lex.tokenize("").stream
         result = integer.separated_by(just(Basic.Comma)).parse(tokens).unwrap()
         assert result[0] == []

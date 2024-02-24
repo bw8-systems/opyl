@@ -172,11 +172,7 @@ class Require[In, Out, Err](Parser[In, Out, Err]):
             case PR.Match(item, pos):
                 return PR.Match(item, pos)
             case PR.NoMatch:
-                match input.peek():
-                    case Maybe.Just(spanned):
-                        return PR.Error(self.error, spanned.span)
-                    case Maybe.Nothing:
-                        return PR.Error(self.error, input.end())
+                return PR.Error(self.error, input.spans[input.position - 1].span)
             case PR.Error() as errs:
                 return errs
 
@@ -190,7 +186,12 @@ class Spanned[In, Out, Err](Parser[In, span.Spanned[Out], Err]):
         match self.parser.parse(input):
             case PR.Match(item, pos):
                 return PR.Match(
-                    span.Spanned(item, span.Span(input.position, pos.position)), pos
+                    span.Spanned(
+                        item,
+                        input.spans[input.position].span
+                        + pos.spans[pos.position - 1].span,
+                    ),
+                    pos,
                 )
             case PR.NoMatch:
                 return PR.NoMatch
@@ -573,6 +574,17 @@ class Just[In, Err](Parser[In, In, Err]):
                 return PR.NoMatch
             case Maybe.Nothing:
                 return PR.NoMatch
+
+
+@dataclass
+class Nothing[In, Err](Parser[In, Maybe.Type[In], Err]):
+    @t.override
+    def parse(self, input: Stream[In]) -> ParseResult.Type[In, Maybe.Type[In], Err]:
+        match input.peek():
+            case Maybe.Just():
+                return PR.NoMatch
+            case Maybe.Nothing:
+                return PR.Match(Maybe.Nothing, input.advance())
 
 
 @dataclass

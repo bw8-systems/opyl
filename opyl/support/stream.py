@@ -25,11 +25,14 @@ class Stream[ItemType]:
         yield from self.spans
 
     @staticmethod
-    def from_source(source: str, file_handle: str | None = None) -> "Stream[str]":
+    def from_source(
+        source: str, file_handle: str | None = None, span_base: int = 0
+    ) -> "Stream[str]":
         return Stream(
             file_handle=file_handle,
             spans=[
-                Spanned(item, Span(idx, idx + 1)) for idx, item in enumerate(source)
+                Spanned(item, Span(idx, idx + 1))
+                for idx, item in enumerate(source, start=span_base)
             ],
         )
 
@@ -59,6 +62,13 @@ class Stream[ItemType]:
             file_handle=self.file_handle,
             spans=self.spans,
             position=min(self.position + by, len(self.spans)),
+        )
+
+    def advance_to(self, to: int) -> t.Self:
+        return self.__class__(
+            file_handle=self.file_handle,
+            spans=self.spans,
+            position=to,
         )
 
     def startswith(self, pattern: t.Sequence[ItemType]) -> bool:

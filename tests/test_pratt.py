@@ -51,7 +51,7 @@ def test_subscript_expr():
 
 
 def test_invalid_subscript_expr():
-    tokens = lex.tokenize("foo[bar").unwrap()[0]
+    tokens = lex.tokenize("foo[bar").stream
     result = pratt.expr.parse(tokens)
     item = result.unwrap_err()[0]
     assert item.expected == "']'"
@@ -86,7 +86,7 @@ def test_call_expr_no_args():
 
 
 def test_invalid_call_expr():
-    tokens = lex.tokenize("function(foo, 1").unwrap()[0]
+    tokens = lex.tokenize("function(foo, 1").stream
     result = pratt.expr.parse(tokens)
     item = result.unwrap_err()[0]
     assert item.expected == "')'"
@@ -97,7 +97,7 @@ def test_member_access():
 
 
 def test_invalid_member_access():
-    tokens = lex.tokenize("foo.5").unwrap()[0]
+    tokens = lex.tokenize("foo.5").stream
     result = pratt.expr.parse(tokens)
     item = result.unwrap_err()[0]
     assert item.expected == "identifier"
@@ -145,7 +145,7 @@ def test_function_call_with_line_breaks():
 
 
 def test_unclosed_group():
-    tokens = lex.tokenize("(4 + 2").unwrap()[0]
+    tokens = lex.tokenize("(4 + 2").stream
     result = pratt.expr.parse(tokens)
     item = result.unwrap_err()[0]
     assert item.expected == "')'"
