@@ -4,7 +4,7 @@ from opyl.support.stream import Source
 from opyl.support.combinator import PR
 from opyl.compile import lex
 from opyl.compile import parse
-from opyl.compile import analyze
+from opyl.compile import symbols
 from opyl.compile.error import report_lex_errors, report_parse_error
 
 
@@ -24,4 +24,4 @@ def compile(source_fpath: Path, text: str):
             report_parse_error(err, span, source)
             exit()
 
-    analyze.build_decl_symbols(decls)
+    global_symbols = symbols.build_global_symbols()

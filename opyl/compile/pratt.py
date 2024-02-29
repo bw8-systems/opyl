@@ -16,7 +16,7 @@ from opyl.compile.expr import (
 )
 from opyl.support.combinator import PR, Parser, ParseResult
 from opyl.support.stream import Stream
-from opyl.support.atoms import just, filt, ident, integer, newlines, string
+from opyl.support.atoms import just, filt, ident, integer, newlines, string, char
 from opyl.support.union import Maybe
 
 
@@ -155,7 +155,7 @@ prefix_op_expr = (
     .map(lambda op_right: PrefixExpression(op_right[0], op_right[1]))
 )
 
-prefix_parser = grouped_expr | prefix_op_expr | ident | integer | string
+prefix_parser = grouped_expr | prefix_op_expr | ident | integer | string | char
 
 
 def infix_parser(left: ex.Expression) -> Parser[Token, InfixExpression, ParseError]:
