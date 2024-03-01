@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-
+import enum
 
 from opyl.compile.expr import Expression
-from opyl.compile.token import Identifier
+from opyl.compile.token import Identifier, Basic
 from opyl.support.union import Maybe
 
 
@@ -14,10 +14,23 @@ type Statement = (
     | WhenStatement
     | IfStatement
     | ReturnStatement
+    | AssignStatement
     | Expression
 )
 
-type Type = Identifier
+type Type = Identifier | BuiltInType
+
+
+class BuiltInType(enum.Enum):
+    U8 = "u8"
+    I8 = "i8"
+    U16 = "u16"
+    I16 = "i16"
+    U32 = "u32"
+    I32 = "i32"
+    Str = "str"
+    Char = "char"
+    Bool = "bool"
 
 
 @dataclass
@@ -102,13 +115,11 @@ class TraitDeclaration:
 
 
 @dataclass
-class ContinueStatement:
-    ...
+class ContinueStatement: ...
 
 
 @dataclass
-class BreakStatement:
-    ...
+class BreakStatement: ...
 
 
 type LoopStatement = Statement | BreakStatement | ContinueStatement
@@ -151,3 +162,18 @@ class WhenStatement:
 @dataclass
 class ReturnStatement:
     expression: Maybe.Type[Expression]
+
+
+class AssignmentOperator(enum.Enum):
+    Equal = Basic.Equal
+    Add = Basic.PlusEqual
+    Subtract = Basic.HyphenEqual
+    Multiply = Basic.AsteriskEqual
+    Divide = Basic.ForwardSlashEqual
+
+
+@dataclass
+class AssignStatement:
+    target: Expression
+    operator: AssignmentOperator
+    value: Expression

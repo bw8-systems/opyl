@@ -100,10 +100,18 @@ keyword = identifier.and_check(lambda ident: ident.identifier in Keyword).map(
 
 basic = choice(
     (
-        just("+").to(Basic.Plus),
-        just("-").ignore_then(just(">").to(Basic.RightArrow).or_else(Basic.Hyphen)),
-        just("*").to(Basic.Asterisk),
-        just("/").to(Basic.ForwardSlash),
+        just("+").ignore_then(just("=").to(Basic.PlusEqual).or_else(Basic.Plus)),
+        just("-").ignore_then(
+            (just(">").to(Basic.RightArrow) | just("=").to(Basic.HyphenEqual)).or_else(
+                Basic.Hyphen
+            )
+        ),
+        just("*").ignore_then(
+            just("=").to(Basic.AsteriskEqual).or_else(Basic.Asterisk)
+        ),
+        just("/").ignore_then(
+            just("=").to(Basic.ForwardSlashEqual).or_else(Basic.ForwardSlash)
+        ),
         just("^").to(Basic.Caret),
         just("%").to(Basic.Percent),
         just("@").to(Basic.At),

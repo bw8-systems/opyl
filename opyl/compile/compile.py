@@ -16,6 +16,7 @@ def compile(source_fpath: Path, text: str):
 
     match parse.parse(lex_result.stream):
         case PR.Match(decls):
+            ...
             pprint(decls)
         case PR.NoMatch:
             print("No Match! (wtf?)")
@@ -24,4 +25,5 @@ def compile(source_fpath: Path, text: str):
             report_parse_error(err, span, source)
             exit()
 
-    global_symbols = symbols.build_global_symbols()
+    global_symbols, _ = symbols.build_global_symbols(decls)
+    pprint(global_symbols)

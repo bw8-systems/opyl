@@ -1,10 +1,11 @@
 import typing as t
 from dataclasses import dataclass
 
-from opyl.compile.token import Token, Basic
+from opyl.compile.token import Token, Basic, Keyword
 from opyl.compile.error import ParseError
 from opyl.compile import expr as ex
 from opyl.compile.expr import (
+    BooleanLiteral,
     BinaryExpression,
     BinOp,
     CallExpression,
@@ -14,7 +15,7 @@ from opyl.compile.expr import (
     MemberAccessExpression,
     PrefixExpression,
 )
-from opyl.support.combinator import PR, Parser, ParseResult
+from opyl.support.combinator import PR, Parser, ParseResult, choice
 from opyl.support.stream import Stream
 from opyl.support.atoms import just, filt, ident, integer, newlines, string, char
 from opyl.support.union import Maybe
@@ -89,7 +90,7 @@ def bin_op_expr(left: ex.Expression) -> Parser[Token, BinaryExpression, ParseErr
     return (
         # TODO: Don't like isinstance here and elsewhere
         filt(lambda tok: tok in BinOp)
-        .map(lambda op: BinOp(op))
+        .map(BinOp)
         .map(lambda op: (op, op.adjusted_precedence()))
         .then_with_ctx(lambda op_prec, input: expression(op_prec[1]).parse(input))
         .map(
@@ -150,9 +151,16 @@ def member_access_expr(
 
 prefix_op_expr = (
     filt(lambda op: isinstance(op, Basic) and op in PrefixOperator)
-    .map(lambda op: PrefixOperator(op))
+    .map(PrefixOperator)
     .then_with_ctx(lambda op, input: expression(op.precedence()).parse(input))
     .map(lambda op_right: PrefixExpression(op_right[0], op_right[1]))
+)
+
+boolean = choice(
+    (
+        just(Keyword.True_).to(BooleanLiteral.True_),
+        just(Keyword.False_).to(BooleanLiteral.False_),
+    )
 )
 
 prefix_parser = grouped_expr | prefix_op_expr | ident | integer | string | char

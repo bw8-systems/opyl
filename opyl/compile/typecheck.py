@@ -1,6 +1,7 @@
 from opyl.support.union import Maybe
 from opyl.compile.expr import (
     Expression,
+    BooleanLiteral,
     BinaryExpression,
     StringLiteral,
     CharacterLiteral,
@@ -18,15 +19,17 @@ from opyl.compile.types import Type, Primitive
 
 def check_expression(expression: Expression) -> Maybe.Type[Type]:
     match expression:
+        case BooleanLiteral():
+            return Maybe.Nothing
         case Identifier():
             # TODO: Symbol table lookups
             return Maybe.Nothing
         case IntegerLiteral():
             return Maybe.Just(Primitive.UInt16)
         case StringLiteral():
-            return Maybe.Just(Primitive.String)
+            return Maybe.Just(Primitive.Str)
         case CharacterLiteral():
-            return Maybe.Just(Primitive.Character)
+            return Maybe.Just(Primitive.Char)
         case PrefixExpression(operator, expression):
             return check_prefix_expr(operator, expression)
         case BinaryExpression(operator, lhs, rhs):
@@ -57,13 +60,13 @@ def check_binary_expr(
     match (left, right):
         case (Primitive.UInt16, Primitive.UInt16):
             return Maybe.Just(Primitive.UInt16)
-        case (Primitive.String, _):
+        case (Primitive.Str, _):
             return Maybe.Nothing
-        case (_, Primitive.String):
+        case (_, Primitive.Str):
             return Maybe.Nothing
-        case (Primitive.Character, _):
+        case (Primitive.Char, _):
             return Maybe.Nothing
-        case (_, Primitive.Character):
+        case (_, Primitive.Char):
             return Maybe.Nothing
         case _:
             assert False

@@ -13,6 +13,9 @@ class Maybe:
             assert self is self.Nothing
             assert False, "Unwrapping failed: Maybe is not Maybe.Just"
 
+        def __bool__(self) -> bool:
+            return self is self.Just
+
     @dataclass
     class Just[T]:
         item: T

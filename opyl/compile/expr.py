@@ -1,6 +1,6 @@
 import typing as t
 from dataclasses import dataclass
-from enum import Enum
+import enum
 
 from opyl.compile.token import (
     Basic,
@@ -16,6 +16,7 @@ type InfixExpression = BinaryExpression | CallExpression | SubscriptExpression |
 type Expression = (
     Identifier
     | IntegerLiteral
+    | BooleanLiteral
     | StringLiteral
     | CharacterLiteral
     | PrefixExpression
@@ -23,14 +24,19 @@ type Expression = (
 )
 
 
-class InfixOperator(Enum):
+class BooleanLiteral(enum.Enum):
+    True_ = enum.auto()
+    False_ = enum.auto()
+
+
+class InfixOperator(enum.Enum):
     FunctionApply = Basic.LeftParenthesis
     Subscript = Basic.LeftBracket
     MemberAccess = Basic.Period
     ScopeResolve = Basic.Colon2
 
 
-class BinOp(Enum):
+class BinOp(enum.Enum):
     Addition = Basic.Plus
     Subtraction = Basic.Hyphen
     Multiplication = Basic.Asterisk
@@ -97,7 +103,7 @@ class BinOp(Enum):
         return isinstance(any, Basic) and any in cls
 
 
-class PrefixOperator(Enum):
+class PrefixOperator(enum.Enum):
     ArithmeticPlus = Basic.Plus
     ArithmeticMinus = Basic.Hyphen
     LogicalNegate = Basic.Bang

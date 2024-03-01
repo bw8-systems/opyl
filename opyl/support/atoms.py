@@ -8,10 +8,11 @@ from opyl.compile.token import (
     CharacterLiteral,
 )
 from opyl.compile.error import ParseError
-from opyl.support.combinator import Filter, Just
+from opyl.support.combinator import Filter, Just, OneOf
 
 filt = Filter[Token, ParseError]
 just = Just[Token, ParseError]
+one_of = OneOf[Token, ParseError]
 
 ident = filt(lambda tok: isinstance(tok, Identifier)).map(
     lambda tok: t.cast(Identifier, tok)

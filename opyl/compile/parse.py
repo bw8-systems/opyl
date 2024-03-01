@@ -5,7 +5,7 @@ from opyl.compile.token import Token, Keyword, Basic, Identifier
 from opyl.compile.error import ParseError
 from opyl.compile.pratt import expr
 from opyl.support.stream import Stream
-from opyl.support.combinator import Parser, ParseResult, Nothing
+from opyl.support.combinator import Parser, ParseResult, Nothing, OneOf, choice
 from opyl.support.union import Maybe
 from opyl.support.atoms import just, ident, newlines
 
@@ -16,7 +16,8 @@ class Statement(Parser[Token, ast.Statement, ParseError]):
         self, input: Stream[Token]
     ) -> ParseResult.Type[Token, ast.Statement, ParseError]:
         return (
-            return_stmt
+            assign_stmt
+            | return_stmt
             | if_stmt
             | for_loop
             | while_loop
@@ -84,7 +85,24 @@ def kw_expr(keyword: Keyword) -> Parser[Token, ast.Expression, ParseError]:
     )
 
 
-type = ident
+one_of = OneOf[Token, ParseError]
+
+
+builtin_type = choice(
+    (
+        just(Keyword.Bool).to(ast.BuiltInType.Bool),
+        just(Keyword.Char).to(ast.BuiltInType.Char),
+        just(Keyword.Str).to(ast.BuiltInType.Str),
+        just(Keyword.U8).to(ast.BuiltInType.U8),
+        just(Keyword.I8).to(ast.BuiltInType.I8),
+        just(Keyword.U16).to(ast.BuiltInType.U16),
+        just(Keyword.I16).to(ast.BuiltInType.I16),
+        just(Keyword.U32).to(ast.BuiltInType.U32),
+        just(Keyword.I32).to(ast.BuiltInType.I32),
+    )
+)
+
+type = ident | builtin_type
 
 
 field = ident.then(
@@ -183,6 +201,25 @@ func_sig = (
 
 stmt = Statement()
 
+assign_operator = choice(
+    (
+        just(Basic.Equal).to(ast.AssignmentOperator.Equal),
+        just(Basic.PlusEqual).to(ast.AssignmentOperator.Add),
+        just(Basic.HyphenEqual).to(ast.AssignmentOperator.Subtract),
+        just(Basic.AsteriskEqual).to(ast.AssignmentOperator.Multiply),
+        just(Basic.ForwardSlashEqual).to(ast.AssignmentOperator.Divide),
+    )
+)
+
+assign_stmt = expr.then(
+    assign_operator.then(
+        expr.require(ParseError(expected="expression", following="assignment operator"))
+    )
+).map(
+    lambda items: ast.AssignStatement(
+        target=items[0], operator=items[1][0], value=items[1][1]
+    )
+)
 
 break_stmt = just(Keyword.Break).to(ast.BreakStatement())
 continue_stmt = just(Keyword.Continue).to(ast.ContinueStatement())

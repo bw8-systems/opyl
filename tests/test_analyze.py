@@ -14,12 +14,12 @@ class TestTypeCheck:
     def test_str_literal(self):
         tokens = lex.tokenize('"Hello, World!"').stream
         literal = parse.expr.parse(tokens).unwrap()[0]
-        assert typecheck.check_expression(literal).unwrap() is types.Primitive.String
+        assert typecheck.check_expression(literal).unwrap() is types.Primitive.Str
 
     def test_char_literal(self):
         tokens = lex.tokenize("'c'").stream
         literal = parse.expr.parse(tokens).unwrap()[0]
-        assert typecheck.check_expression(literal).unwrap() is types.Primitive.Character
+        assert typecheck.check_expression(literal).unwrap() is types.Primitive.Char
 
     def test_bin_op(self):
         tokens = lex.tokenize("4 + 2").stream

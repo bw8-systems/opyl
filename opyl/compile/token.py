@@ -23,17 +23,31 @@ class Keyword(Enum):
     Return = "return"
     Break = "break"
     Continue = "continue"
-    Char = "char"
     Mut = "mut"
     Anon = "anon"
+    U8 = "u8"
+    I8 = "i8"
+    U16 = "u16"
+    I16 = "i16"
+    U32 = "u32"
+    I32 = "i32"
+    Str = "str"
+    Char = "char"
+    Bool = "bool"
+    True_ = "true"
+    False_ = "false"
 
 
 class Basic(Enum):
     Plus = auto()
+    PlusEqual = auto()
     Hyphen = auto()
+    HyphenEqual = auto()
     RightArrow = auto()
     Asterisk = auto()
+    AsteriskEqual = auto()
     ForwardSlash = auto()
+    ForwardSlashEqual = auto()
     Caret = auto()
     Percent = auto()
     At = auto()
@@ -83,14 +97,14 @@ type IntegerLiteralBase = t.Literal[2] | t.Literal[10] | t.Literal[16]
 Whitespace: t.Final[t.Literal[TokenKind.Whitespace]] = TokenKind.Whitespace
 
 
-@dataclass(eq=False)
+@dataclass()
 class Identifier:
     identifier: str
 
-    def __eq__(self, other: t.Any) -> bool:
-        if not isinstance(other, self.__class__):
-            return NotImplemented
-        return self.identifier == other.identifier
+    # def __eq__(self, other: t.Any) -> bool:
+    #     if not isinstance(other, self.__class__):
+    #         return NotImplemented
+    #     return self.identifier == other.identifier
 
 
 @dataclass
